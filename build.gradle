@@ -92,9 +92,9 @@ test {
 // ============================================================
 publishing {
     publications {
-        register('mavenJava', MavenPublication) {
+        mavenJava(org.gradle.api.publish.maven.MavenPublication) {
             groupId = project.mod_group_id
-            artifactId = archivesName.get()
+            artifactId = project.base.archivesName.get()
             version = project.mod_version
             from components.java
         }

@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.bikininjas.corelib.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "core_lib.refmap.json",
+  "mixins": [
+    "EnchantmentMenuMixin"
+  ],
+  "client": [],
+  "server": []
+}

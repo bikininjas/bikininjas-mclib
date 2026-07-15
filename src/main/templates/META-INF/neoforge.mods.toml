@@ -10,3 +10,6 @@ logoFile="${mod_id}.png"
 credits="Built with NeoForge"
 authors="${mod_authors}"
 description='''${mod_description}'''
+
+[[mods.mixins]]
+config="core_lib.mixins.json"

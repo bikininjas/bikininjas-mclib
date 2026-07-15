@@ -58,7 +58,7 @@ public final class Registers {
      * Register an item with custom properties.
      */
     public static DeferredHolder<Item, Item> item(String name, Item.Properties properties) {
-        return ITEMS.registerItem(name, properties);
+        return ITEMS.registerItem(name, Item::new, properties);
     }
 
     /**
@@ -81,7 +81,7 @@ public final class Registers {
         var blockHolder = BLOCKS.register(name, blockFactory);
         var itemHolder = ITEMS.register(name,
                 () -> new BlockItem(blockHolder.get(), new Item.Properties()));
-        return new Registration<>(blockHolder, itemHolder);
+        return new Registration<Block, Item>(blockHolder, itemHolder);
     }
 
     /**
@@ -104,7 +104,7 @@ public final class Registers {
     ) {
         @SuppressWarnings("unchecked")
         var holder = (DeferredHolder<EntityType<?>, EntityType<T>>)
-                (DeferredHolder<?, ?>) ENTITY_TYPES.register(name, builder::build);
+                (DeferredHolder<?, ?>) ENTITY_TYPES.register(name, () -> builder.build(name));
         return holder;
     }
 
@@ -113,7 +113,7 @@ public final class Registers {
     // ──────────────────────────────────────────────
 
     public record Registration<B extends Block, I extends Item>(
-            DeferredHolder<Block, B> block,
-            DeferredHolder<Item, I> item
+            DeferredHolder<Block, ? extends B> block,
+            DeferredHolder<Item, ? extends I> item
     ) {}
 }

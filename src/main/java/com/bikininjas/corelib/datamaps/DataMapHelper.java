@@ -5,6 +5,7 @@ import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.neoforged.neoforge.registries.DeferredHolder;
 
 import java.util.function.Supplier;
@@ -104,8 +105,7 @@ public final class DataMapHelper {
      * {@code data/<mod_id>/datamaps/item/<key>.json}
      */
     public static String dataMapKey(DataComponentType<?> type) {
-        var id = net.neoforged.neoforge.registries.NeoForgeRegistries
-                .DATA_COMPONENT_TYPES.getKey(type);
+        var id = BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(type);
         return id != null ? id.toLanguageKey() : "unknown";
     }
 }
