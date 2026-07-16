@@ -5,114 +5,125 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Objects;
 
 /**
- * Built-in {@link RandomEvent} factory methods.
- * <p>
- * Each static method returns a ready-to-register {@code RandomEvent} lambda.
- * Register them via {@link RandomEventManager#register(RandomEvent, String)}:
- * <pre>{@code
- * RandomEventManager.getInstance()
- *     .register(RandomEvents.announceEvent("Boo!"), "ghost_announce")
- *     .register(RandomEvents.randomExplosionEvent(3.0f, false), "mini_boom");
- * }</pre>
- * <p>
- * This class is a static utility and cannot be instantiated.
+ * Factory methods for common {@link RandomEvent} implementations.
  */
 public final class RandomEvents {
 
-    private RandomEvents() {}
-
-    /**
-     * Broadcast a plain-text system message to every player.
-     *
-     * @param message the message text
-     * @return a {@link RandomEvent} that announces the message
-     */
-    public static RandomEvent announceEvent(String message) {
-        return (level, origin) -> {
-            if (level.getServer() == null) {
-                return;
-            }
-            level.getServer().getPlayerList()
-                    .broadcastSystemMessage(Component.literal(message), false);
-        };
+    private RandomEvents() {
     }
 
     /**
-     * Broadcast a pre-built chat component to every player.
-     *
-     * @param message the component to broadcast
-     * @return a {@link RandomEvent} that announces the component
+     * Create an event that broadcasts an announcement to all players.
      */
-    public static RandomEvent announceEvent(Component message) {
-        return (level, origin) -> {
-            if (level.getServer() == null) {
-                return;
-            }
-            level.getServer().getPlayerList()
-                    .broadcastSystemMessage(message, false);
-        };
+    public static @NotNull RandomEvent announceEvent(@NotNull String message) {
+        Objects.requireNonNull(message, "message must not be null");
+        return new AnnounceEvent(message);
     }
 
     /**
-     * Spawn {@code count} entities of the given type at random positions near
-     * the event origin.
-     *
-     * @param type  the entity type to spawn
-     * @param count how many entities to spawn
-     * @return a {@link RandomEvent} that spawns the entities
+     * Create an event that spawns a number of entities at the origin.
      */
-    public static RandomEvent spawnEntityEvent(EntityType<?> type, int count) {
-        return (level, origin) -> {
+    public static @NotNull RandomEvent spawnEntityEvent(@NotNull EntityType<?> type, int count) {
+        Objects.requireNonNull(type, "type must not be null");
+        return new SpawnEntityEvent(type, count);
+    }
+
+    /**
+     * Create an event that triggers an explosion at the origin.
+     */
+    public static @NotNull RandomEvent randomExplosionEvent(float power, boolean fire) {
+        return new ExplosionEvent(power, fire);
+    }
+
+    /**
+     * Create an event that clears the weather.
+     */
+    public static @NotNull RandomEvent clearWeatherEvent() {
+        return new ClearWeatherEvent();
+    }
+
+    /**
+     * Create an event that sets random weather (rain or thunder).
+     */
+    public static @NotNull RandomEvent randomWeatherEvent() {
+        return new RandomWeatherEvent();
+    }
+
+    // -- Implementations -----------------------------------------------------
+
+    private record AnnounceEvent(String message) implements RandomEvent {
+        @Override public @NotNull String name() { return "announce"; }
+        @Override
+        public void execute(@NotNull ServerLevel level, @NotNull Vec3 origin) {
+            var server = level.getServer();
+            if (server != null) {
+                server.getPlayerList().broadcastSystemMessage(
+                        Component.literal(message), false);
+            }
+        }
+    }
+
+    private record SpawnEntityEvent(EntityType<?> type, int count) implements RandomEvent {
+        @Override public @NotNull String name() { return "spawn_entity"; }
+        @Override
+        public void execute(@NotNull ServerLevel level, @NotNull Vec3 origin) {
             for (int i = 0; i < count; i++) {
                 var entity = type.create(level);
-                if (entity == null) {
-                    continue;
+                if (entity != null) {
+                    var angle = 2 * Math.PI * i / count;
+                    var pos = origin.add(Math.cos(angle) * 3, 0.5, Math.sin(angle) * 3);
+                    entity.setPos(pos);
+                    level.addFreshEntity(entity);
                 }
-                double dx = origin.x + (level.random.nextDouble() - 0.5) * 16.0;
-                double dy = origin.y + 2.0;
-                double dz = origin.z + (level.random.nextDouble() - 0.5) * 16.0;
-                entity.moveTo(dx, dy, dz, level.random.nextFloat() * 360.0F, 0.0F);
-                level.addFreshEntity(entity);
             }
-        };
+        }
     }
 
-    /**
-     * Create an explosion at a random position near the event origin.
-     *
-     * @param power the explosion power
-     * @param fire  whether the explosion sets fires
-     * @return a {@link RandomEvent} that triggers the explosion
-     */
-    public static RandomEvent randomExplosionEvent(float power, boolean fire) {
-        return (level, origin) -> {
-            double x = origin.x + (level.random.nextDouble() - 0.5) * 16.0;
-            double y = origin.y + 1.0;
-            double z = origin.z + (level.random.nextDouble() - 0.5) * 16.0;
-            level.explode(null, x, y, z, power, fire, Level.ExplosionInteraction.MOB);
-        };
+    private record ExplosionEvent(float power, boolean fire) implements RandomEvent {
+        @Override public @NotNull String name() { return "explosion"; }
+        @Override
+        public void execute(@NotNull ServerLevel level, @NotNull Vec3 origin) {
+            level.explode(null, origin.x, origin.y, origin.z, power, fire,
+                    Level.ExplosionInteraction.TNT);
+        }
+
+        @Override
+        public int weight() {
+            return 1; // very low weight by default — dangerous!
+        }
     }
 
-    /**
-     * Clear the weather (sunny, no rain, no thunder).
-     *
-     * @return a {@link RandomEvent} that clears the weather
-     */
-    public static RandomEvent clearWeatherEvent() {
-        return (level, origin) -> level.setWeatherParameters(6000, 0, false, false);
+    private record ClearWeatherEvent() implements RandomEvent {
+        @Override public @NotNull String name() { return "clear_weather"; }
+        @Override
+        public void execute(@NotNull ServerLevel level, @NotNull Vec3 origin) {
+            level.setWeatherParameters(6000, 0, false, false);
+        }
+
+        @Override
+        public int weight() {
+            return 3;
+        }
     }
 
-    /**
-     * Set random weather — either rain or a thunderstorm.
-     *
-     * @return a {@link RandomEvent} that randomises the weather
-     */
-    public static RandomEvent randomWeatherEvent() {
-        return (level, origin) -> {
-            boolean thunder = level.random.nextDouble() < 0.3;
-            level.setWeatherParameters(0, 12000, true, thunder);
-        };
+    private record RandomWeatherEvent() implements RandomEvent {
+        @Override public @NotNull String name() { return "random_weather"; }
+        @Override
+        public void execute(@NotNull ServerLevel level, @NotNull Vec3 origin) {
+            boolean rain = level.random.nextBoolean();
+            boolean thunder = rain && level.random.nextBoolean();
+            int duration = 600 + level.random.nextInt(5400);
+            level.setWeatherParameters(0, duration, rain, thunder);
+        }
+
+        @Override
+        public int weight() {
+            return 2;
+        }
     }
 }

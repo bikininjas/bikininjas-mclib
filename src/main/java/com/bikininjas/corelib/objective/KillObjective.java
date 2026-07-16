@@ -2,41 +2,77 @@ package com.bikininjas.corelib.objective;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 /**
- * Objective requiring the player to kill a number of entities of a given type.
- * <p>
- * The live kill count is read from {@link ObjectiveTracker#COUNTS} keyed by the
- * player's UUID and this objective's {@link #description()} (record equality
- * guarantees two identically-built objectives share the same counter bucket).
+ * Objective: kill a certain number of a specific entity type.
  */
 public record KillObjective(
         @NotNull String description,
-        @NotNull EntityType<?> entityType,
+        @NotNull EntityType<?> targetType,
         int target
 ) implements Objective {
 
+    private static final ConcurrentMap<String, ConcurrentMap<ServerPlayer, Integer>> killCounts = new ConcurrentHashMap<>();
+    private static final Map<String, EntityType<?>> activeTargets = new ConcurrentHashMap<>();
+
+    static {
+        NeoForge.EVENT_BUS.register(KillHandler.class);
+    }
+
+    public KillObjective {
+        Objects.requireNonNull(description, "description must not be null");
+        Objects.requireNonNull(targetType, "targetType must not be null");
+        activeTargets.put(description, targetType);
+    }
+
     @Override
     public boolean isComplete(@NotNull ServerPlayer player) {
-        return progress(player) >= 1.0f;
+        return progressValue(player) >= target;
     }
 
     @Override
     public float progress(@NotNull ServerPlayer player) {
-        return (float) progressValue(player) / (float) target;
+        return target > 0 ? Math.min(1.0f, (float) progressValue(player) / target) : 0.0f;
     }
 
     @Override
     public int progressValue(@NotNull ServerPlayer player) {
-        Integer count = ObjectiveTracker.COUNTS
-                .getOrDefault(player.getUUID(), java.util.Map.of())
-                .get(description);
-        return Math.min(count == null ? 0 : count, target);
+        return killCounts
+                .getOrDefault(description, new ConcurrentHashMap<>())
+                .getOrDefault(player, 0);
     }
 
     @Override
-    public ObjectiveType type() {
+    public @NotNull ObjectiveType type() {
         return ObjectiveType.KILL;
+    }
+
+    // -- Handler -------------------------------------------------------------
+
+    private static final class KillHandler {
+        private KillHandler() {
+        }
+
+        @SubscribeEvent
+        static void onKill(@NotNull LivingDeathEvent event) {
+            if (!(event.getSource().getEntity() instanceof ServerPlayer killer)) return;
+
+            var killedType = event.getEntity().getType();
+            for (var entry : activeTargets.entrySet()) {
+                if (entry.getValue().equals(killedType)) {
+                    killCounts.computeIfAbsent(entry.getKey(), k -> new ConcurrentHashMap<>())
+                            .merge(killer, 1, Integer::sum);
+                }
+            }
+        }
     }
 }

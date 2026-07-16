@@ -2,52 +2,38 @@ package com.bikininjas.corelib.randomevent;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.NotNull;
 
 /**
- * A {@code RandomEvent} is a single, self-contained action that the
- * {@link RandomEventManager} can schedule and fire at random intervals.
+ * Interface for a random event that can be triggered by {@link RandomEventManager}.
  * <p>
- * Implementations are functional: they only need to provide the
- * {@link #execute(ServerLevel, Vec3)} behaviour. The event's
- * {@link #name()} and {@link #weight()} are derived automatically but can
- * be overridden by the implementation.
+ * Implementations must provide a human-readable {@link #name()} and a
+ * selection {@link #weight()} (0 = never selected).
  * <p>
- * These are <em>not</em> Minecraft {@code net.minecraftforge.event} events —
- * they are this system's own custom, user-defined actions.
+ * For convenience, use {@link RandomEventManager#register(RandomEvent, String)}
+ * to assign a name instead of implementing it yourself.
  */
-@FunctionalInterface
 public interface RandomEvent {
 
     /**
-     * Perform the event's action.
-     *
-     * @param level  the server level the event runs in (never {@code null} during normal use)
-     * @param origin the world-space origin the event should act around
+     * Execute this event at the given level and origin.
      */
-    void execute(ServerLevel level, Vec3 origin);
+    void execute(@NotNull ServerLevel level, @NotNull Vec3 origin);
 
     /**
-     * The registry key / display name of this event.
+     * Human-readable name for this event. Used for display and filtering.
      * <p>
-     * Defaults to the simple class name of the implementation. Lambda or
-     * anonymous implementations should be registered with an explicit name via
-     * {@link RandomEventManager#register(RandomEvent, String)} to avoid unstable
-     * generated class names.
-     *
-     * @return the event name, never {@code null}
+     * Concrete implementations must return a stable, non-reflective name.
+     * For anonymous or lambda-like events, use
+     * {@link RandomEventManager#register(RandomEvent, String)} with an explicit name.
      */
-    default String name() {
-        return getClass().getSimpleName();
-    }
+    @NotNull String name();
 
     /**
-     * The relative selection weight used for weighted-random firing.
-     * <p>
-     * Higher weights are chosen more often. Defaults to {@code 100}.
-     *
-     * @return the selection weight (values {@code < 0} are treated as {@code 0})
+     * Selection weight. Higher values = more likely to be chosen.
+     * Returning 0 excludes this event from random selection.
      */
     default int weight() {
-        return 100;
+        return 1;
     }
 }

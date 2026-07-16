@@ -1,330 +1,219 @@
 package com.bikininjas.corelib.randomevent;
 
-import net.minecraft.server.MinecraftServer;
+import com.google.common.base.Preconditions;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Server-side scheduler and registry for {@link RandomEvent}s.
+ * Singleton engine for scheduling and firing random events with configurable
+ * cooldown intervals and weighted selection.
  * <p>
- * This is a singleton ({@link #getInstance()}). Events are registered into a
- * named pool and, while enabled, one is fired at a random interval (in ticks)
- * chosen between {@link #minInterval} and {@link #maxInterval}. Selection is
- * weighted by each event's {@link RandomEvent#weight()}.
- * <p>
- * The manager self-subscribes to {@link ServerTickEvent.Post} on the NeoForge
- * event bus to drive the cooldown. If the event bus is unavailable (e.g. a
- * pure unit-test environment without a Minecraft runtime) tick scheduling is
- * silently disabled but the manager remains fully usable for manual firing.
+ * Automatically registered on the NeoForge event bus via static initializer.
  */
 public final class RandomEventManager {
 
-    // ──────────────────────────────────────────────
-    //  Singleton
-    // ──────────────────────────────────────────────
+    private static final RandomEventManager INSTANCE = new RandomEventManager();
 
-    private static RandomEventManager instance;
-
-    /**
-     * Get the global {@code RandomEventManager} instance, creating it on first use.
-     *
-     * @return the singleton manager
-     */
-    public static RandomEventManager getInstance() {
-        if (instance == null) {
-            instance = new RandomEventManager();
-        }
-        return instance;
-    }
-
-    // ──────────────────────────────────────────────
-    //  State
-    // ──────────────────────────────────────────────
-
-    /** Registered events keyed by name. Insertion order is preserved for stable iteration. */
-    private final Map<String, RandomEvent> events = new LinkedHashMap<>();
-
+    private final List<Entry> events = new CopyOnWriteArrayList<>();
     private boolean enabled = true;
+    private int cooldownMin = 600;   // 30 seconds at 20 ticks/s
+    private int cooldownMax = 1800;  // 90 seconds
+    private int ticksUntilNext = 0;
 
-    /** Minimum cooldown between timed events, in ticks (default 600 = 30s). */
-    private int minInterval = 600;
-
-    /** Maximum cooldown between timed events, in ticks (default 2400 = 2m). */
-    private int maxInterval = 2400;
-
-    /** Remaining ticks until the next timed event fires. */
-    private int currentCooldown = 0;
-
-    private final Random random = new Random();
-
-    /** Last known server level, captured from tick events. */
-    private ServerLevel targetLevel = null;
-
-    /**
-     * Package-private constructor. Use {@link #getInstance()} to obtain the singleton.
-     */
-    RandomEventManager() {
-        this.currentCooldown = minInterval;
-        try {
-            NeoForge.EVENT_BUS.register(this);
-        } catch (Exception ignored) {
-            // Event bus unavailable outside a Minecraft runtime — tick scheduling disabled.
-        }
+    static {
+        NeoForge.EVENT_BUS.register(EventHandler.class);
     }
 
-    // ──────────────────────────────────────────────
-    //  Registration
-    // ──────────────────────────────────────────────
-
-    /**
-     * Register an event using its {@link RandomEvent#name()} as the key.
-     *
-     * @param event the event to add to the pool
-     * @return this manager, for chaining
-     */
-    public RandomEventManager register(RandomEvent event) {
-        return register(event, event.name());
+    private RandomEventManager() {
     }
 
     /**
-     * Register an event under an explicit name.
-     *
-     * @param event the event to add to the pool
-     * @param name  the registry key (overrides {@link RandomEvent#name()})
-     * @return this manager, for chaining
+     * Get the singleton instance.
      */
-    public RandomEventManager register(RandomEvent event, String name) {
-        events.put(name, event);
-        return this;
+    public static @NotNull RandomEventManager getInstance() {
+        return INSTANCE;
+    }
+
+    // -- Registration --------------------------------------------------------
+
+    /**
+     * Register an event with an auto-generated name (class simple name).
+     */
+    public void register(@NotNull RandomEvent event) {
+        Objects.requireNonNull(event, "event must not be null");
+        events.add(new Entry(event.name(), event));
     }
 
     /**
-     * Remove an event from the pool by name.
-     *
-     * @param name the registry key of the event to remove
+     * Register an event with an explicit key name.
      */
-    public void remove(String name) {
-        events.remove(name);
+    public void register(@NotNull RandomEvent event, @NotNull String name) {
+        Objects.requireNonNull(event, "event must not be null");
+        Objects.requireNonNull(name, "name must not be null");
+        events.add(new Entry(name, event));
     }
 
-    // ──────────────────────────────────────────────
-    //  Enable / interval control
-    // ──────────────────────────────────────────────
+    /**
+     * Remove an event by name.
+     */
+    public void remove(@NotNull String name) {
+        Objects.requireNonNull(name, "name must not be null");
+        events.removeIf(e -> e.name.equals(name));
+    }
+
+    // -- Configuration -------------------------------------------------------
 
     /**
-     * Enable or disable the whole random-event system.
-     * <p>
-     * When disabled, neither timed nor manual events fire.
-     *
-     * @param enabled {@code true} to enable, {@code false} to disable
+     * Enable or disable the random event engine.
      */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
     /**
-     * @return whether the system is currently enabled
-     */
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    /**
-     * Set the cooldown range (in ticks) used for timed events.
-     *
-     * @param min minimum cooldown in ticks (must be {@code >= 0})
-     * @param max maximum cooldown in ticks
+     * Set the cooldown interval range (in ticks) between random events.
      */
     public void setInterval(int min, int max) {
-        int lo = Math.max(0, Math.min(min, max));
-        int hi = Math.max(0, Math.max(min, max));
-        this.minInterval = lo;
-        this.maxInterval = hi;
-        resetCooldown();
+        Preconditions.checkArgument(min >= 0, "min must be >= 0");
+        Preconditions.checkArgument(max >= min, "max must be >= min");
+        this.cooldownMin = min;
+        this.cooldownMax = max;
     }
 
-    /**
-     * @return the current minimum cooldown in ticks
-     */
-    public int getMinInterval() {
-        return minInterval;
-    }
+    // -- Firing --------------------------------------------------------------
 
     /**
-     * @return the current maximum cooldown in ticks
-     */
-    public int getMaxInterval() {
-        return maxInterval;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Firing
-    // ──────────────────────────────────────────────
-
-    /**
-     * Manually fire a single random event from the pool, respecting weights.
-     * <p>
-     * The origin is chosen from a random online player's position; if no level
-     * or players are available, {@link Vec3#ZERO} is used.
+     * Manually fire a random event (ignores cooldown).
+     * Selects from registered events using weighted random selection.
      *
-     * @param level the server level to run the event in (may be {@code null})
+     * @return the event that was fired, or null if no events are registered
      */
-    public void fireRandomEvent(ServerLevel level) {
-        if (!enabled || events.isEmpty()) {
-            return;
+    public @Nullable RandomEvent fireRandomEvent(@NotNull ServerLevel level) {
+        Objects.requireNonNull(level, "level must not be null");
+        var selected = selectRandomEvent();
+        if (selected != null) {
+            selected.execute(level, Vec3.atCenterOf(level.getSharedSpawnPos()));
         }
-        RandomEvent event = selectRandomEvent();
-        if (event == null) {
-            return;
-        }
-        event.execute(level, computeOrigin(level));
+        return selected;
     }
 
     /**
-     * Fire a specific registered event by name.
+     * Fire a specific event by name, ignoring cooldown.
      *
-     * @param name   the registry key of the event to fire
-     * @param level  the server level to run the event in (may be {@code null})
-     * @param origin the world-space origin to pass to the event
+     * @return the event that was fired, or null if not found
      */
-    public void fireEvent(String name, ServerLevel level, Vec3 origin) {
-        if (!enabled) {
-            return;
+    public @Nullable RandomEvent fireEvent(@NotNull String name, @NotNull ServerLevel level, @NotNull Vec3 origin) {
+        Objects.requireNonNull(name, "name must not be null");
+        Objects.requireNonNull(level, "level must not be null");
+        Objects.requireNonNull(origin, "origin must not be null");
+        for (var entry : events) {
+            if (entry.name.equals(name)) {
+                entry.event.execute(level, origin);
+                return entry.event;
+            }
         }
-        RandomEvent event = events.get(name);
-        if (event != null) {
-            event.execute(level, origin);
-        }
+        return null;
     }
 
     /**
-     * Select a random event from the pool using weighted selection.
-     * <p>
-     * Events with higher {@link RandomEvent#weight()} are proportionally more
-     * likely to be returned. Events with a weight of {@code 0} are never chosen.
+     * Perform weighted random selection from all registered events.
      *
-     * @return the selected event, or {@code null} if the pool is empty
+     * @return the selected event, or null if none registered
      */
-    public RandomEvent selectRandomEvent() {
+    public @Nullable RandomEvent selectRandomEvent() {
         if (events.isEmpty()) {
             return null;
         }
-        int total = 0;
-        for (RandomEvent e : events.values()) {
-            total += Math.max(0, e.weight());
+        var rng = new Random();
+        int totalWeight = events.stream().mapToInt(e -> e.event.weight()).sum();
+        if (totalWeight <= 0) {
+            return null;
         }
-        if (total <= 0) {
-            // No positive weights — fall back to uniform selection.
-            int idx = random.nextInt(events.size());
-            return new ArrayList<>(events.values()).get(idx);
-        }
-        int roll = random.nextInt(total);
-        for (RandomEvent e : events.values()) {
-            roll -= Math.max(0, e.weight());
-            if (roll < 0) {
-                return e;
+        int roll = rng.nextInt(totalWeight);
+        int cumulative = 0;
+        for (var entry : events) {
+            cumulative += entry.event.weight();
+            if (roll < cumulative) {
+                return entry.event;
             }
         }
-        return events.values().iterator().next();
+        return events.getLast().event;
     }
 
-    // ──────────────────────────────────────────────
-    //  Introspection
-    // ──────────────────────────────────────────────
+    // -- Queries -------------------------------------------------------------
 
     /**
-     * @return an immutable list of all registered event names
+     * Get all registered event names.
      */
-    public List<String> getAllEvents() {
-        return new ArrayList<>(events.keySet());
+    public @NotNull List<String> getAllEvents() {
+        return events.stream().map(e -> e.name).toList();
     }
 
     /**
-     * @return the number of registered events
+     * Get the number of registered events.
      */
     public int getEventCount() {
         return events.size();
     }
 
     /**
-     * Reset the manager to a clean state: clears all events, re-enables the
-     * system, restores the default interval, and resets the cooldown.
-     * <p>
-     * Primarily useful for tests and for reloading configuration.
+     * Reset the manager to its initial state: removes all events and resets cooldown.
      */
     public void reset() {
         events.clear();
+        ticksUntilNext = 0;
         enabled = true;
-        minInterval = 600;
-        maxInterval = 2400;
-        currentCooldown = minInterval;
-        targetLevel = null;
     }
 
-    // ──────────────────────────────────────────────
-    //  Internal tick handling
-    // ──────────────────────────────────────────────
+    // -- Internal ------------------------------------------------------------
 
-    /**
-     * Drive the cooldown on every server tick. When the cooldown reaches zero a
-     * random event is fired and the cooldown is randomised again.
-     *
-     * @param event the server tick event
-     */
-    @SubscribeEvent
-    public void onServerTick(ServerTickEvent.Post event) {
-        MinecraftServer server = event.getServer();
-        if (server != null) {
-            ServerLevel level = server.getLevel(Level.OVERWORLD);
-            if (level == null) {
-                var levels = server.getAllLevels().iterator();
-                level = levels.hasNext() ? levels.next() : null;
+    private record Entry(String name, RandomEvent event) {
+    }
+
+    private int nextCooldown() {
+        if (cooldownMax <= cooldownMin) {
+            return cooldownMin;
+        }
+        return cooldownMin + new Random().nextInt(cooldownMax - cooldownMin + 1);
+    }
+
+    // -- Event handler -------------------------------------------------------
+
+    private static final class EventHandler {
+        private EventHandler() {
+        }
+
+        @SubscribeEvent
+        static void onServerTick(@NotNull ServerTickEvent.Post event) {
+            var mgr = getInstance();
+            if (!mgr.enabled || mgr.events.isEmpty()) {
+                return;
             }
-            this.targetLevel = level;
-        }
 
-        if (!enabled) {
-            return;
+            mgr.ticksUntilNext--;
+            if (mgr.ticksUntilNext <= 0) {
+                mgr.ticksUntilNext = mgr.nextCooldown();
+                // The event fires on all server levels; pick the first one
+                var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+                if (server != null) {
+                    var level = server.overworld();
+                    if (level != null) {
+                        mgr.fireRandomEvent(level);
+                    }
+                }
+            }
         }
-        if (currentCooldown > 0) {
-            currentCooldown--;
-            return;
-        }
-        fireRandomEvent(targetLevel);
-        resetCooldown();
-    }
-
-    // ──────────────────────────────────────────────
-    //  Helpers
-    // ──────────────────────────────────────────────
-
-    private void resetCooldown() {
-        if (maxInterval <= minInterval) {
-            currentCooldown = minInterval;
-        } else {
-            currentCooldown = minInterval + random.nextInt(maxInterval - minInterval + 1);
-        }
-    }
-
-    private Vec3 computeOrigin(ServerLevel level) {
-        if (level == null || level.getServer() == null) {
-            return Vec3.ZERO;
-        }
-        var players = level.getServer().getPlayerList().getPlayers();
-        if (players.isEmpty()) {
-            return Vec3.ZERO;
-        }
-        var player = players.get(random.nextInt(players.size()));
-        return player.position();
     }
 }

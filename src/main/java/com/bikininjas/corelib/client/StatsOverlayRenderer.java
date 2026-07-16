@@ -1,86 +1,74 @@
 package com.bikininjas.corelib.client;
 
+import com.bikininjas.corelib.network.NetworkHandler.StatsClientData;
+import com.bikininjas.corelib.stats.StatsDisplayPrefs;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import org.jetbrains.annotations.NotNull;
 
 /**
- * Client-side HUD overlay that renders a translucent stats panel
- * on the right side of the screen.
- * <p>
- * The overlay is drawn during {@link RenderGuiEvent.Post} and respects
- * the visibility and field-preference flags synced from the server.
- * Auto-sizing: the panel width expands to fit the longest stat line.
- * <p>
- * Registered on the NeoForge event bus from {@code CoreLib} via
- * {@code FMLClientSetupEvent}.
+ * Renders a semi-transparent stats HUD overlay on the right side of the screen.
  */
 public final class StatsOverlayRenderer {
 
-    private static final int BG_COLOR         = 0x88000000;
-    private static final int HEADER_COLOR     = 0xFFDAA520;
-    private static final int DEATH_COLOR      = 0xFFFF5555;
-    private static final int KILL_COLOR       = 0xFFFFAA00;
-    private static final int BLOCK_COLOR      = 0xFFAAAAAA;
-    private static final int CRAFT_COLOR      = 0xFFFF55FF;
-    private static final int MARGIN           = 4;
+    private StatsOverlayRenderer() {
+    }
 
-    private record UiLine(String text, int color) {}
-
-    private StatsOverlayRenderer() {}
-
-    @SubscribeEvent
-    static void onRenderGuiPost(RenderGuiEvent.Post event) {
-        if (!StatsClientData.isVisible()) {
-            return;
+    public static final class Renderer {
+        private Renderer() {
         }
 
-        Minecraft mc = Minecraft.getInstance();
-        Font font = mc.font;
-        GuiGraphics gg = event.getGuiGraphics();
-        int screenWidth = mc.getWindow().getGuiScaledWidth();
-        int screenHeight = mc.getWindow().getGuiScaledHeight();
+        @SubscribeEvent
+        static void onRenderGui(@NotNull RenderGuiEvent.Post event) {
+            var mc = Minecraft.getInstance();
+            if (mc.player == null || mc.screen != null) {
+                return;
+            }
 
-        // ── Build lines ────────────────────────────
-        java.util.List<UiLine> uiLines = new java.util.ArrayList<>();
-        uiLines.add(new UiLine("Stats:", HEADER_COLOR));
+            if (!StatsClientData.isOverlayEnabled()) {
+                return;
+            }
 
-        var fields = StatsClientData.getVisibleFields();
-        if (fields.contains("deaths"))
-            uiLines.add(new UiLine("\u2620 Deaths: " + StatsClientData.getDeaths(), DEATH_COLOR));
-        if (fields.contains("kills"))
-            uiLines.add(new UiLine("\u2694 Kills: " + StatsClientData.getKills(), KILL_COLOR));
-        if (fields.contains("blocksBroken"))
-            uiLines.add(new UiLine("\u26CF Blocks Broken: " + StatsClientData.getBlocksBroken(), BLOCK_COLOR));
-        if (fields.contains("crafts"))
-            uiLines.add(new UiLine("\uD83D\uDD28 Crafts: " + StatsClientData.getCrafts(), CRAFT_COLOR));
+            var stats = StatsClientData.getLatest();
+            var graphics = event.getGuiGraphics();
+            var font = mc.font;
+            var width = mc.getWindow().getGuiScaledWidth();
+            var height = mc.getWindow().getGuiScaledHeight();
 
-        if (uiLines.size() <= 1) {
-            return;
-        }
+            int x = width - 110;
+            int y = height / 2 - 40;
 
-        // ── Layout ─────────────────────────────────
-        int lineHeight = font.lineHeight + 1;
-        int width = 0;
-        for (UiLine line : uiLines) {
-            width = Math.max(width, font.width(line.text));
-        }
-        width += MARGIN * 2;
-        int height = uiLines.size() * lineHeight + MARGIN * 2;
+            int bgHeight = 56;
+            int lineY = y + 16;
+            int color = 0xCCCCCC;
 
-        int x = screenWidth - width - MARGIN;
-        int y = screenHeight / 2 - height / 2;
+            boolean hasVisible = StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_DEATHS)
+                    || StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_KILLS)
+                    || StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_BLOCKS)
+                    || StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_CRAFTS);
 
-        // ── Draw background ─────────────────────────
-        gg.fill(x, y, x + width, y + height, BG_COLOR);
+            if (!hasVisible) return;
 
-        // ── Draw text ───────────────────────────────
-        int textY = y + MARGIN;
-        for (UiLine line : uiLines) {
-            gg.drawString(font, line.text, x + MARGIN, textY, line.color);
-            textY += lineHeight;
+            graphics.fill(x - 4, y - 4, x + 100, y + bgHeight, 0x88000000);
+            graphics.drawString(font, "Stats", x + 30, y + 2, 0xFFFFFF);
+
+            if (StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_DEATHS)) {
+                graphics.drawString(font, "Deaths: " + stats.deaths(), x + 4, lineY, color);
+                lineY += 10;
+            }
+            if (StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_KILLS)) {
+                graphics.drawString(font, "Kills: " + stats.kills(), x + 4, lineY, color);
+                lineY += 10;
+            }
+            if (StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_BLOCKS)) {
+                graphics.drawString(font, "Blocks: " + stats.blocksBroken(), x + 4, lineY, color);
+                lineY += 10;
+            }
+            if (StatsClientData.isFieldVisible(StatsDisplayPrefs.BIT_CRAFTS)) {
+                graphics.drawString(font, "Crafts: " + stats.crafts(), x + 4, lineY, color);
+            }
         }
     }
 }

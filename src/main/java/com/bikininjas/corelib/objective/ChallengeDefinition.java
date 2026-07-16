@@ -2,29 +2,13 @@ package com.bikininjas.corelib.objective;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Immutable definition of a challenge stored in the {@link ChallengeRegistry}.
- * <p>
- * A definition describes a named challenge that players can start. It includes
- * the human-readable {@link #displayName()}, the {@link Objective}s to complete,
- * an optional wall-clock time limit, and a list of mod IDs that must be loaded
- * before the challenge can be started.
- * <p>
- * Passed directly to {@link ObjectiveTracker#startChallenge} — there is no
- * separate {@code Challenge} wrapper type.
- *
- * @param name             short registry key (e.g. {@code "dragon_rush"});
- *                         never {@code null}.
- * @param displayName      human-readable name shown in commands and the action
- *                         bar; never {@code null}.
- * @param objectives       the objectives composing the challenge; never
- *                         {@code null}.
- * @param timeLimitSeconds optional wall-clock limit in seconds ({@code 0}
- *                         means no limit).
- * @param requiredMods     mod IDs that must be loaded; never {@code null}.
- *                         An empty list means no mod requirement.
+ * A challenge template/definition that can be registered and instantiated.
+ * Supports filtering by required mods.
  */
 public record ChallengeDefinition(
         @NotNull String name,
@@ -34,28 +18,26 @@ public record ChallengeDefinition(
         @NotNull List<String> requiredMods
 ) {
 
-    /**
-     * Compact constructor that defensively copies list arguments.
-     */
     public ChallengeDefinition {
-        objectives = List.copyOf(objectives);
-        requiredMods = List.copyOf(requiredMods);
+        Objects.requireNonNull(name, "name must not be null");
+        Objects.requireNonNull(displayName, "displayName must not be null");
+        objectives = objectives == null ? List.of() : List.copyOf(objectives);
+        requiredMods = requiredMods == null ? List.of() : List.copyOf(requiredMods);
     }
 
     /**
-     * Convenience constructor for challenges that require no specific mods.
-     *
-     * @param name             registry key
-     * @param displayName      human-readable name
-     * @param objectives       the objectives
-     * @param timeLimitSeconds time limit ({@code 0} = no limit)
+     * Create a definition with no mod requirements.
      */
-    public ChallengeDefinition(
-            @NotNull String name,
-            @NotNull String displayName,
-            @NotNull List<Objective> objectives,
-            int timeLimitSeconds
-    ) {
-        this(name, displayName, objectives, timeLimitSeconds, List.of());
+    public static @NotNull ChallengeDefinition of(
+            @NotNull String name, @NotNull String displayName,
+            @NotNull List<Objective> objectives, int timeLimitSeconds) {
+        return new ChallengeDefinition(name, displayName, objectives, timeLimitSeconds, List.of());
+    }
+
+    /**
+     * Create a {@link Challenge} from this definition.
+     */
+    public @NotNull Challenge toChallenge() {
+        return new Challenge(name, objectives, timeLimitSeconds);
     }
 }

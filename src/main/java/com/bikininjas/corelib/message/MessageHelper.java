@@ -1,521 +1,264 @@
 package com.bikininjas.corelib.message;
 
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.Style;
-import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
-import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
-import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.players.PlayerList;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.Map;
 import java.util.Objects;
 
 /**
- * Static helpers for sending chat messages, titles, subtitles and action-bar
- * text to players, plus a small set of formatting utilities built on top of
- * Minecraft's {@link Component} API.
+ * Utilities for sending chat messages, titles, action bars, and broadcasts.
  * <p>
- * Every method is static. The class cannot be instantiated. No method depends
- * on a live game registry, so the pure formatting helpers ({@link #text},
- * {@link #red}, {@link #format}, ...) are safe to call from unit tests, while
- * the player/server-bound methods require a running Minecraft server.
- * <p>
- * Color helpers return a {@link Component} styled with the matching
- * {@link ChatFormatting}. The {@link #format(String)} helper parses legacy
- * {@code &}-prefixed color/format codes (e.g. {@code &c}, {@code &l}) and
- * supports {@code &&} as an escape for a literal ampersand.
+ * Supports color formatting via {@code &}-codes ({@code &c}, {@code &l}, {@code &a}...).
+ * All methods are static. No event bus registration.
  */
 public final class MessageHelper {
 
-    /** Default title fade-in duration, in ticks. */
-    public static final int DEFAULT_FADE_IN = 10;
-    /** Default title stay duration, in ticks. */
-    public static final int DEFAULT_STAY = 70;
-    /** Default title fade-out duration, in ticks. */
-    public static final int DEFAULT_FADE_OUT = 20;
-
     private MessageHelper() {
-        // Utility class — do not instantiate.
     }
 
-    // ---------------------------------------------------------------------
-    // Chat
-    // ---------------------------------------------------------------------
+    // -- Chat -----------------------------------------------------------------
 
     /**
-     * Send a plain-text system message to a single player.
-     *
-     * @param player  the target player (must not be {@code null})
-     * @param message the raw message text (must not be {@code null})
-     * @throws NullPointerException if {@code player} or {@code message} is {@code null}
+     * Send a chat message to a single player.
      */
-    public static void chat(ServerPlayer player, String message) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(message, "message");
-        player.sendSystemMessage(Component.literal(message));
+    public static void chat(@NotNull ServerPlayer player, @NotNull String message) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(message, "message must not be null");
+        player.sendSystemMessage(text(message));
     }
 
     /**
-     * Send a pre-built {@link Component} system message to a single player.
-     *
-     * @param player  the target player (must not be {@code null})
-     * @param message the message component (must not be {@code null})
-     * @throws NullPointerException if {@code player} or {@code message} is {@code null}
+     * Send a chat Component to a single player.
      */
-    public static void chat(ServerPlayer player, Component message) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(message, "message");
+    public static void chat(@NotNull ServerPlayer player, @NotNull Component message) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(message, "message must not be null");
         player.sendSystemMessage(message);
     }
 
-    // ---------------------------------------------------------------------
-    // Title / Subtitle
-    // ---------------------------------------------------------------------
+    // -- Title ----------------------------------------------------------------
 
     /**
-     * Display a title and subtitle to a single player with custom timing.
-     *
-     * @param player   the target player (must not be {@code null})
-     * @param title    the title text (must not be {@code null})
-     * @param subtitle the subtitle text (must not be {@code null})
-     * @param fadeIn   fade-in duration, in ticks
-     * @param stay     stay duration, in ticks
-     * @param fadeOut  fade-out duration, in ticks
-     * @throws NullPointerException if {@code player}, {@code title} or {@code subtitle} is {@code null}
+     * Send a title with default timings (10 fade-in, 70 stay, 20 fade-out ticks).
      */
-    public static void title(ServerPlayer player, String title, String subtitle,
-                             int fadeIn, int stay, int fadeOut) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(title, "title");
-        Objects.requireNonNull(subtitle, "subtitle");
-        player.connection.send(new ClientboundSetTitleTextPacket(Component.literal(title)));
-        player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(subtitle)));
+    public static void title(@NotNull ServerPlayer player, @NotNull String title, @Nullable String subtitle) {
+        title(player, text(title), subtitle != null ? text(subtitle) : null, 10, 70, 20);
+    }
+
+    /**
+     * Send a title with custom timings.
+     */
+    public static void title(
+            @NotNull ServerPlayer player,
+            @NotNull Component title,
+            @Nullable Component subtitle,
+            int fadeIn, int stay, int fadeOut) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(title, "title must not be null");
         player.connection.send(new ClientboundSetTitlesAnimationPacket(fadeIn, stay, fadeOut));
-    }
-
-    /**
-     * Display a title and subtitle to a single player using default timing
-     * ({@value #DEFAULT_FADE_IN}/{@value #DEFAULT_STAY}/{@value #DEFAULT_FADE_OUT}).
-     *
-     * @param player   the target player (must not be {@code null})
-     * @param title    the title text (must not be {@code null})
-     * @param subtitle the subtitle text (must not be {@code null})
-     * @throws NullPointerException if {@code player}, {@code title} or {@code subtitle} is {@code null}
-     */
-    public static void title(ServerPlayer player, String title, String subtitle) {
-        title(player, title, subtitle, DEFAULT_FADE_IN, DEFAULT_STAY, DEFAULT_FADE_OUT);
-    }
-
-    /**
-     * Display a pre-built title and subtitle {@link Component} to a single player
-     * using default timing.
-     *
-     * @param player   the target player (must not be {@code null})
-     * @param title    the title component (must not be {@code null})
-     * @param subtitle the subtitle component (must not be {@code null})
-     * @throws NullPointerException if {@code player}, {@code title} or {@code subtitle} is {@code null}
-     */
-    public static void title(ServerPlayer player, Component title, Component subtitle) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(title, "title");
-        Objects.requireNonNull(subtitle, "subtitle");
         player.connection.send(new ClientboundSetTitleTextPacket(title));
-        player.connection.send(new ClientboundSetSubtitleTextPacket(subtitle));
-        player.connection.send(new ClientboundSetTitlesAnimationPacket(
-                DEFAULT_FADE_IN, DEFAULT_STAY, DEFAULT_FADE_OUT));
+        if (subtitle != null) {
+            player.connection.send(new ClientboundSetSubtitleTextPacket(subtitle));
+        }
     }
 
-    // ---------------------------------------------------------------------
-    // Action bar
-    // ---------------------------------------------------------------------
+    // -- Action bar -----------------------------------------------------------
 
     /**
-     * Display a text message in the player's action bar (the line above the
-     * hotbar).
-     *
-     * @param player the target player (must not be {@code null})
-     * @param text   the action-bar text (must not be {@code null})
-     * @throws NullPointerException if {@code player} or {@code text} is {@code null}
+     * Send an action bar message to a player.
      */
-    public static void actionBar(ServerPlayer player, String text) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(text, "text");
-        player.displayClientMessage(Component.literal(text), true);
+    public static void actionBar(@NotNull ServerPlayer player, @NotNull String text) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(text, "text must not be null");
+        player.displayClientMessage(text(text), true);
     }
 
     /**
-     * Display a pre-built {@link Component} in the player's action bar.
-     *
-     * @param player the target player (must not be {@code null})
-     * @param text   the action-bar component (must not be {@code null})
-     * @throws NullPointerException if {@code player} or {@code text} is {@code null}
+     * Send an action bar Component to a player.
      */
-    public static void actionBar(ServerPlayer player, Component text) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(text, "text");
-        player.displayClientMessage(text, true);
+    public static void actionBar(@NotNull ServerPlayer player, @NotNull Component component) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(component, "component must not be null");
+        player.displayClientMessage(component, true);
     }
 
-    // ---------------------------------------------------------------------
-    // Broadcast (explicit server reference)
-    // ---------------------------------------------------------------------
+    // -- Broadcast ------------------------------------------------------------
 
     /**
-     * Broadcast a plain-text system message to every player on the server.
-     *
-     * @param message the message text (must not be {@code null})
-     * @param server  the running {@link MinecraftServer} (must not be {@code null})
-     * @throws NullPointerException if {@code message} or {@code server} is {@code null}
+     * Broadcast a chat message to all players on the server.
      */
-    public static void broadcastChat(String message, MinecraftServer server) {
-        Objects.requireNonNull(message, "message");
-        Objects.requireNonNull(server, "server");
-        PlayerList players = server.getPlayerList();
-        players.broadcastSystemMessage(Component.literal(message), false);
+    public static void broadcastChat(@NotNull String message, @NotNull MinecraftServer server) {
+        Objects.requireNonNull(message, "message must not be null");
+        Objects.requireNonNull(server, "server must not be null");
+        server.getPlayerList().broadcastSystemMessage(text(message), false);
     }
 
     /**
-     * Broadcast a pre-built {@link Component} system message to every player.
-     *
-     * @param message the message component (must not be {@code null})
-     * @param server  the running {@link MinecraftServer} (must not be {@code null})
-     * @throws NullPointerException if {@code message} or {@code server} is {@code null}
+     * Broadcast a Component to all players on the server.
      */
-    public static void broadcastChat(Component message, MinecraftServer server) {
-        Objects.requireNonNull(message, "message");
-        Objects.requireNonNull(server, "server");
-        server.getPlayerList().broadcastSystemMessage(message, false);
+    public static void broadcastChat(@NotNull Component component, @NotNull MinecraftServer server) {
+        Objects.requireNonNull(component, "component must not be null");
+        Objects.requireNonNull(server, "server must not be null");
+        server.getPlayerList().broadcastSystemMessage(component, false);
     }
 
     /**
-     * Broadcast a title and subtitle to every player on the server with custom
-     * timing.
-     *
-     * @param title    the title text (must not be {@code null})
-     * @param subtitle the subtitle text (must not be {@code null})
-     * @param fadeIn   fade-in duration, in ticks
-     * @param stay     stay duration, in ticks
-     * @param fadeOut  fade-out duration, in ticks
-     * @param server   the running {@link MinecraftServer} (must not be {@code null})
-     * @throws NullPointerException if any argument is {@code null}
+     * Broadcast a title to all players.
      */
-    public static void broadcastTitle(String title, String subtitle,
-                                       int fadeIn, int stay, int fadeOut,
-                                       MinecraftServer server) {
-        Objects.requireNonNull(title, "title");
-        Objects.requireNonNull(subtitle, "subtitle");
-        Objects.requireNonNull(server, "server");
-        Component titleComponent = Component.literal(title);
-        Component subtitleComponent = Component.literal(subtitle);
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            player.connection.send(new ClientboundSetTitleTextPacket(titleComponent));
-            player.connection.send(new ClientboundSetSubtitleTextPacket(subtitleComponent));
-            player.connection.send(new ClientboundSetTitlesAnimationPacket(fadeIn, stay, fadeOut));
+    public static void broadcastTitle(
+            @NotNull Component title, @Nullable Component subtitle,
+            int fadeIn, int stay, int fadeOut,
+            @NotNull MinecraftServer server) {
+        Objects.requireNonNull(title, "title must not be null");
+        Objects.requireNonNull(server, "server must not be null");
+        var packet = new ClientboundSetTitlesAnimationPacket(fadeIn, stay, fadeOut);
+        var titlePacket = new ClientboundSetTitleTextPacket(title);
+        var subtitlePacket = subtitle != null ? new ClientboundSetSubtitleTextPacket(subtitle) : null;
+        for (var player : server.getPlayerList().getPlayers()) {
+            player.connection.send(packet);
+            player.connection.send(titlePacket);
+            if (subtitlePacket != null) {
+                player.connection.send(subtitlePacket);
+            }
         }
     }
 
     /**
-     * Broadcast an action-bar message to every player on the server.
-     *
-     * @param text   the action-bar text (must not be {@code null})
-     * @param server the running {@link MinecraftServer} (must not be {@code null})
-     * @throws NullPointerException if {@code text} or {@code server} is {@code null}
+     * Broadcast an action bar to all players.
      */
-    public static void broadcastActionBar(String text, MinecraftServer server) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(server, "server");
-        Component component = Component.literal(text);
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+    public static void broadcastActionBar(@NotNull String text, @NotNull MinecraftServer server) {
+        Objects.requireNonNull(text, "text must not be null");
+        Objects.requireNonNull(server, "server must not be null");
+        var component = text(text);
+        for (var player : server.getPlayerList().getPlayers()) {
             player.displayClientMessage(component, true);
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Format helpers
-    // ---------------------------------------------------------------------
+    // -- Sound ----------------------------------------------------------------
 
     /**
-     * Wrap raw text into a plain {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return a literal {@link Component} containing {@code text}
-     * @throws NullPointerException if {@code text} is {@code null}
+     * Play a sound to a player.
      */
-    public static Component text(String text) {
-        return Component.literal(Objects.requireNonNull(text, "text"));
+    public static void playSound(@NotNull ServerPlayer player, @NotNull SoundEvent sound, float volume, float pitch) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(sound, "sound must not be null");
+        player.connection.send(new ClientboundSoundPacket(
+                BuiltInRegistries.SOUND_EVENT.wrapAsHolder(sound), SoundSource.MASTER,
+                player.getX(), player.getY(), player.getZ(),
+                volume, pitch, player.getRandom().nextLong()
+        ));
+    }
+
+    // -- Component formatting -------------------------------------------------
+
+    /**
+     * Create a literal text Component.
+     */
+    public static @NotNull MutableComponent text(@NotNull String text) {
+        return Component.literal(Objects.requireNonNull(text, "text must not be null"));
     }
 
     /**
-     * Build a red-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
+     * Parse {@code &}-codes into a formatted Component.
+     * Supports: {@code &0-9}, {@code &a-f}, {@code &k-o}, {@code &r}.
      */
-    public static Component red(String text) {
-        return colored(text, ChatFormatting.RED);
-    }
-
-    /**
-     * Build a green-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component green(String text) {
-        return colored(text, ChatFormatting.GREEN);
-    }
-
-    /**
-     * Build a blue-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component blue(String text) {
-        return colored(text, ChatFormatting.BLUE);
-    }
-
-    /**
-     * Build a gold-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component gold(String text) {
-        return colored(text, ChatFormatting.GOLD);
-    }
-
-    /**
-     * Build a gray-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component gray(String text) {
-        return colored(text, ChatFormatting.GRAY);
-    }
-
-    /**
-     * Build a white-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component white(String text) {
-        return colored(text, ChatFormatting.WHITE);
-    }
-
-    /**
-     * Build an aqua-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component aqua(String text) {
-        return colored(text, ChatFormatting.AQUA);
-    }
-
-    /**
-     * Build a yellow-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component yellow(String text) {
-        return colored(text, ChatFormatting.YELLOW);
-    }
-
-    /**
-     * Build a light-purple-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component lightPurple(String text) {
-        return colored(text, ChatFormatting.LIGHT_PURPLE);
-    }
-
-    /**
-     * Build a dark-red-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component darkRed(String text) {
-        return colored(text, ChatFormatting.DARK_RED);
-    }
-
-    /**
-     * Build a dark-green-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component darkGreen(String text) {
-        return colored(text, ChatFormatting.DARK_GREEN);
-    }
-
-    /**
-     * Build a dark-blue-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component darkBlue(String text) {
-        return colored(text, ChatFormatting.DARK_BLUE);
-    }
-
-    /**
-     * Build a dark-gray-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component darkGray(String text) {
-        return colored(text, ChatFormatting.DARK_GRAY);
-    }
-
-    /**
-     * Build a black-colored {@link Component}.
-     *
-     * @param text the text (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component black(String text) {
-        return colored(text, ChatFormatting.BLACK);
-    }
-
-    /**
-     * Apply a single {@link ChatFormatting} color to literal text.
-     *
-     * @param text  the text (must not be {@code null})
-     * @param color the formatting/color to apply (must not be {@code null})
-     * @return the styled component
-     * @throws NullPointerException if {@code text} or {@code color} is {@code null}
-     */
-    private static Component colored(String text, ChatFormatting color) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(color, "color");
-        return Component.literal(text).withStyle(Style.EMPTY.withColor(color));
-    }
-
-    /**
-     * Parse legacy {@code &}-prefixed color and format codes into a styled
-     * {@link Component}.
-     * <p>
-     * Supported codes (see {@link #LEGACY_CODES}): {@code &4} dark red,
-     * {@code &c} red, {@code &6} gold, {@code &e} yellow, {@code &a} green,
-     * {@code &b} aqua, {@code &d} light purple, {@code &f} white, {@code &7}
-     * gray, {@code &8} dark gray, {@code &l} bold, {@code &o} italic,
-     * {@code &n} underline, {@code &m} strikethrough, {@code &k} obfuscated,
-     * {@code &r} reset. A literal ampersand is written as {@code &&}.
-     *
-     * @param text the text containing legacy codes (must not be {@code null})
-     * @return a {@link Component} with the parsed styling applied
-     * @throws NullPointerException if {@code text} is {@code null}
-     */
-    public static Component format(String text) {
-        Objects.requireNonNull(text, "text");
-
-        MutableComponent result = Component.literal("");
-        Style current = Style.EMPTY;
-        StringBuilder buffer = new StringBuilder();
-
+    public static @NotNull MutableComponent format(@NotNull String text) {
+        Objects.requireNonNull(text, "text must not be null");
+        var output = Component.literal("");
+        var current = new StringBuilder();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c == '&' && i + 1 < text.length()) {
-                char next = text.charAt(i + 1);
-                if (next == '&') {
-                    // Escaped ampersand -> literal '&'.
-                    buffer.append('&');
-                    i++; // consume the second '&'
-                    continue;
+                // Flush current literal
+                if (!current.isEmpty()) {
+                    output.append(Component.literal(current.toString()));
+                    current.setLength(0);
                 }
-                ChatFormatting formatting = LEGACY_CODES.get(next);
-                if (formatting != null) {
-                    flush(result, buffer, current);
-                    current = applyFormatting(current, formatting);
-                    i++; // consume the code char
-                    continue;
+                char code = text.charAt(++i);
+                var format = ChatFormatting.getByCode(code);
+                if (format != null) {
+                    output.append(Component.literal("").withStyle(format));
                 }
+            } else {
+                current.append(c);
             }
-            buffer.append(c);
         }
-        flush(result, buffer, current);
-
-        return result;
+        if (!current.isEmpty()) {
+            output.append(Component.literal(current.toString()));
+        }
+        return output;
     }
 
-    /**
-     * Append the buffered text as a single styled segment, then clear the
-     * buffer. No-op when the buffer is empty.
-     */
-    private static void flush(MutableComponent result, StringBuilder buffer, Style style) {
-        if (buffer.length() == 0) {
-            return;
-        }
-        result.append(Component.literal(buffer.toString()).withStyle(style));
-        buffer.setLength(0);
+    // -- Named colour helpers -------------------------------------------------
+
+    public static @NotNull MutableComponent red(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.RED);
     }
 
-    /**
-     * Merge a {@link ChatFormatting} into the current {@link Style}.
-     * <p>
-     * {@code &r} (reset) clears all formatting; color codes set the color,
-     * decoration codes toggle the matching decoration.
-     */
-    private static Style applyFormatting(Style style, ChatFormatting formatting) {
-        if (formatting == ChatFormatting.RESET) {
-            return Style.EMPTY;
-        }
-        if (formatting.isColor()) {
-            return style.withColor(formatting);
-        }
-        return style.applyFormat(formatting);
+    public static @NotNull MutableComponent green(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.GREEN);
     }
 
-    /**
-     * Map of legacy {@code &}-code characters to their {@link ChatFormatting}.
-     */
-    private static final Map<Character, ChatFormatting> LEGACY_CODES = buildLegacyCodes();
+    public static @NotNull MutableComponent blue(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.BLUE);
+    }
 
-    private static Map<Character, ChatFormatting> buildLegacyCodes() {
-        Map<Character, ChatFormatting> map = new java.util.HashMap<>();
-        map.put('4', ChatFormatting.DARK_RED);
-        map.put('c', ChatFormatting.RED);
-        map.put('6', ChatFormatting.GOLD);
-        map.put('e', ChatFormatting.YELLOW);
-        map.put('a', ChatFormatting.GREEN);
-        map.put('b', ChatFormatting.AQUA);
-        map.put('d', ChatFormatting.LIGHT_PURPLE);
-        map.put('f', ChatFormatting.WHITE);
-        map.put('7', ChatFormatting.GRAY);
-        map.put('8', ChatFormatting.DARK_GRAY);
-        map.put('0', ChatFormatting.BLACK);
-        map.put('l', ChatFormatting.BOLD);
-        map.put('o', ChatFormatting.ITALIC);
-        map.put('n', ChatFormatting.UNDERLINE);
-        map.put('m', ChatFormatting.STRIKETHROUGH);
-        map.put('k', ChatFormatting.OBFUSCATED);
-        map.put('r', ChatFormatting.RESET);
-        return java.util.Collections.unmodifiableMap(map);
+    public static @NotNull MutableComponent gold(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.GOLD);
+    }
+
+    public static @NotNull MutableComponent yellow(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.YELLOW);
+    }
+
+    public static @NotNull MutableComponent aqua(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.AQUA);
+    }
+
+    public static @NotNull MutableComponent lightPurple(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.LIGHT_PURPLE);
+    }
+
+    public static @NotNull MutableComponent white(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.WHITE);
+    }
+
+    public static @NotNull MutableComponent gray(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.GRAY);
+    }
+
+    public static @NotNull MutableComponent darkRed(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.DARK_RED);
+    }
+
+    public static @NotNull MutableComponent darkGreen(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.DARK_GREEN);
+    }
+
+    public static @NotNull MutableComponent darkBlue(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.DARK_BLUE);
+    }
+
+    public static @NotNull MutableComponent darkAqua(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.DARK_AQUA);
+    }
+
+    public static @NotNull MutableComponent darkGray(@NotNull String text) {
+        return text(text).withStyle(ChatFormatting.DARK_GRAY);
     }
 }

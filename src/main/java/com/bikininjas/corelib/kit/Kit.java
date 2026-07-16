@@ -2,29 +2,34 @@ package com.bikininjas.corelib.kit;
 
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 /**
- * Immutable definition of a player kit: a named bundle of items, armor, an
- * offhand item and status effects that can be handed to a player via
- * {@link KitManager#give(net.minecraft.server.level.ServerPlayer, String)}.
- * <p>
- * Instances are plain records and therefore immutable and thread-safe to read
- * once published into the {@link KitManager} registry.
- *
- * @param name    the unique registry key / display name of the kit (non-blank)
- * @param items   the main-inventory items (may be empty, never {@code null})
- * @param armor   the four armor pieces, indexed as {@code [boots, leggings, chestplate, helmet]}
- *                (must be length 4, never {@code null})
- * @param offhand the item placed in the player's offhand (may be {@link ItemStack#EMPTY})
- * @param effects the status effects applied on give (may be empty, never {@code null})
+ * Immutable kit definition: a named collection of items, armor, offhand, and effects.
  */
 public record Kit(
-        String name,
-        ItemStack[] items,
-        ItemStack[] armor,
-        ItemStack offhand,
-        Collection<MobEffectInstance> effects
+        @NotNull String name,
+        @NotNull List<ItemStack> items,
+        @NotNull List<ItemStack> armor,
+        @NotNull ItemStack offhand,
+        @NotNull List<MobEffectInstance> effects
 ) {
+
+    public Kit {
+        items = items == null ? List.of() : List.copyOf(items);
+        armor = armor == null ? List.of() : List.copyOf(armor);
+        offhand = offhand == null ? ItemStack.EMPTY : offhand;
+        effects = effects == null ? List.of() : List.copyOf(effects);
+    }
+
+    /**
+     * Create a simple kit with just items (no armor, offhand, or effects).
+     */
+    public static @NotNull Kit of(@NotNull String name, @NotNull ItemStack... items) {
+        return new Kit(name, List.of(items), List.of(), ItemStack.EMPTY, List.of());
+    }
 }

@@ -1,250 +1,168 @@
 package com.bikininjas.corelib.restriction;
 
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Global, resource-based restriction API for NeoForge mods.
+ * API for blocking specific actions: block placement/breaking, item usage,
+ * entity spawning, and dimension entry.
  * <p>
- * Mods register a {@link ResourceLocation} (a block, item, entity type or
- * dimension) against a {@link RestrictionType} to block the corresponding
- * player action whenever that resource is involved. Restrictions are global
- * (not player-specific) and are enforced by a static event handler subscribed
- * to the NeoForge event bus.
- * <p>
- * The registry is thread-safe ({@link ConcurrentHashMap}) and the public
- * accessor returns an unmodifiable view, so callers cannot mutate the internal
- * state.
- * <p>
- * Example usage:
- * <pre>{@code
- * RestrictionManager.register(
- *     ResourceLocation.fromNamespaceAndPath("mymod", "forbidden_block"),
- *     RestrictionType.PLACE_BLOCK);
- * }</pre>
+ * All methods are static. Automatically registers event handlers via static initializer.
  */
 public final class RestrictionManager {
 
-    private RestrictionManager() {}
-
-    /**
-     * Registry of restricted resources keyed by their {@link ResourceLocation}.
-     * The value is the {@link RestrictionType} that the resource is restricted for.
-     */
-    private static final Map<ResourceLocation, RestrictionType> RESTRICTIONS =
-            new ConcurrentHashMap<>();
+    private static final Map<RestrictionType, Set<ResourceLocation>> restrictions = new EnumMap<>(RestrictionType.class);
 
     static {
-        // Register the restriction enforcer once on the NeoForge event bus.
+        for (var type : RestrictionType.values()) {
+            restrictions.put(type, ConcurrentHashMap.newKeySet());
+        }
         NeoForge.EVENT_BUS.register(RestrictionHandler.class);
     }
 
-    /**
-     * Force-load this class to trigger the static initialiser.
-     * Idempotent — safe to call multiple times.
-     */
-    public static void init() {
-        // static block does the work
+    private RestrictionManager() {
     }
 
-    // ──────────────────────────────────────────────
-    //  Public API
-    // ──────────────────────────────────────────────
+    // -- Registration --------------------------------------------------------
 
     /**
-     * Register a resource as restricted for the given type.
-     *
-     * @param id   the registry name of the resource to restrict (block, item,
-     *             entity type or dimension)
-     * @param type the category of action to block for that resource
-     * @return {@code true} if the restriction was added, {@code false} if the
-     *         resource was already registered (with any type)
+     * Register a restriction: block the given resource from the specified action.
      */
-    public static boolean register(ResourceLocation id, RestrictionType type) {
-        return RESTRICTIONS.putIfAbsent(id, type) == null;
+    public static void register(@NotNull RestrictionType type, @NotNull ResourceLocation id) {
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        restrictions.get(type).add(id);
     }
 
     /**
-     * Remove a previously registered restriction.
-     *
-     * @param id the registry name of the resource to unregister
-     * @return {@code true} if a restriction was removed, {@code false} if no
-     *         restriction existed for that resource
+     * Register a restriction using namespace and path (e.g. {@code "minecraft", "tnt"}).
      */
-    public static boolean unregister(ResourceLocation id) {
-        return RESTRICTIONS.remove(id) != null;
+    public static void register(@NotNull RestrictionType type, @NotNull String namespace, @NotNull String path) {
+        register(type, ResourceLocation.fromNamespaceAndPath(
+                Objects.requireNonNull(namespace, "namespace must not be null"),
+                Objects.requireNonNull(path, "path must not be null")));
+    }
+
+    // -- Query ---------------------------------------------------------------
+
+    /**
+     * Check whether the given resource is restricted for the specified action type.
+     */
+    public static boolean isRestricted(@NotNull RestrictionType type, @NotNull ResourceLocation id) {
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return restrictions.get(type).contains(id);
+    }
+
+    // -- Removal -------------------------------------------------------------
+
+    /**
+     * Remove a specific restriction.
+     */
+    public static void unregister(@NotNull RestrictionType type, @NotNull ResourceLocation id) {
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        restrictions.get(type).remove(id);
     }
 
     /**
-     * Check whether a specific resource is restricted for a specific type.
-     *
-     * @param id   the registry name of the resource to query
-     * @param type the category of action to check
-     * @return {@code true} if the resource is registered and its restriction
-     *         type matches the given type
+     * Remove all restrictions of a given type.
      */
-    public static boolean isRestricted(ResourceLocation id, RestrictionType type) {
-        return RESTRICTIONS.get(id) == type;
+    public static void clear(@NotNull RestrictionType type) {
+        Objects.requireNonNull(type, "type must not be null");
+        restrictions.get(type).clear();
     }
 
     /**
-     * Remove all registered restrictions.
+     * Remove all restrictions of all types.
      */
     public static void clear() {
-        RESTRICTIONS.clear();
+        for (var set : restrictions.values()) {
+            set.clear();
+        }
     }
 
     /**
-     * Return an unmodifiable snapshot of all registered restrictions.
-     *
-     * @return an immutable copy of the resource-to-type mapping
+     * Get all restricted resources for a given type (unmodifiable view).
      */
-    public static Map<ResourceLocation, RestrictionType> getAll() {
-        return Collections.unmodifiableMap(new ConcurrentHashMap<>(RESTRICTIONS));
+    public static @NotNull Set<ResourceLocation> getAll(@NotNull RestrictionType type) {
+        return Collections.unmodifiableSet(restrictions.get(type));
     }
 
-    // ──────────────────────────────────────────────
-    //  Event handler
-    // ──────────────────────────────────────────────
-
     /**
-     * Static event handler that enforces restrictions on the NeoForge event bus.
-     * Registered once in the static initializer. Every handler first verifies
-     * that the event originates on a {@link ServerLevel} before cancelling, so
-     * client-side or logical-side mismatches never trigger a cancellation.
+     * Force class loading (called from CoreLib.initModules()).
      */
+    public static void init() {
+        // static initializer already ran; this method exists for explicit invocation
+    }
+
+    // -- Event handler -------------------------------------------------------
+
     private static final class RestrictionHandler {
+        private RestrictionHandler() {
+        }
 
-        private RestrictionHandler() {}
-
-        /**
-         * Cancel block placement when the placed block's registry name matches a
-         * {@link RestrictionType#PLACE_BLOCK} restriction.
-         */
         @SubscribeEvent
-        public static void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
-            if (!(event.getLevel() instanceof ServerLevel)) {
-                return;
-            }
-            BlockState placed = event.getPlacedBlock();
-            ResourceLocation id = getBlockId(placed.getBlock());
-            if (id != null && isRestricted(id, RestrictionType.PLACE_BLOCK)) {
+        static void onPlaceBlock(@NotNull BlockEvent.EntityPlaceEvent event) {
+            var pos = event.getPos();
+            var id = event.getPlacedBlock().getBlock().builtInRegistryHolder().key().location();
+            if (isRestricted(RestrictionType.PLACE_BLOCK, id)) {
                 event.setCanceled(true);
             }
         }
 
-        /**
-         * Cancel block breaking when the broken block's registry name matches a
-         * {@link RestrictionType#BREAK_BLOCK} restriction.
-         */
         @SubscribeEvent
-        public static void onBlockBreak(BlockEvent.BreakEvent event) {
-            if (!(event.getLevel() instanceof ServerLevel)) {
-                return;
-            }
-            BlockState state = event.getState();
-            ResourceLocation id = getBlockId(state.getBlock());
-            if (id != null && isRestricted(id, RestrictionType.BREAK_BLOCK)) {
+        static void onBreakBlock(@NotNull BlockEvent.BreakEvent event) {
+            var state = event.getState();
+            var id = state.getBlock().builtInRegistryHolder().key().location();
+            if (isRestricted(RestrictionType.BREAK_BLOCK, id)) {
                 event.setCanceled(true);
             }
         }
 
-        /**
-         * Cancel item usage (right-click) when the held item's registry name
-         * matches a {@link RestrictionType#USE_ITEM} restriction. Only applies to
-         * server-side players.
-         */
         @SubscribeEvent
-        public static void onItemUse(PlayerInteractEvent.RightClickItem event) {
-            if (!(event.getLevel() instanceof ServerLevel)) {
-                return;
-            }
-            if (!(event.getEntity() instanceof Player)) {
-                return;
-            }
-            ItemStack stack = event.getItemStack();
-            ResourceLocation id = getItemId(stack.getItem());
-            if (id != null && isRestricted(id, RestrictionType.USE_ITEM)) {
+        static void onUseItem(@NotNull PlayerInteractEvent.RightClickItem event) {
+            var stack = event.getItemStack();
+            var id = stack.getItem().builtInRegistryHolder().key().location();
+            if (isRestricted(RestrictionType.USE_ITEM, id)) {
                 event.setCanceled(true);
             }
         }
 
-        /**
-         * Cancel entity spawning when the entity type's registry name matches a
-         * {@link RestrictionType#SPAWN_ENTITY} restriction. Player entities are
-         * never blocked by this restriction.
-         */
         @SubscribeEvent
-        public static void onEntityJoin(EntityJoinLevelEvent event) {
-            if (!(event.getLevel() instanceof ServerLevel)) {
-                return;
-            }
-            Entity entity = event.getEntity();
-            if (entity instanceof Player) {
-                return;
-            }
-            ResourceLocation id = getEntityTypeId(entity.getType());
-            if (id != null && isRestricted(id, RestrictionType.SPAWN_ENTITY)) {
+        static void onEntitySpawn(@NotNull EntityJoinLevelEvent event) {
+            var id = event.getEntity().getType().builtInRegistryHolder().key().location();
+            if (isRestricted(RestrictionType.SPAWN_ENTITY, id)) {
                 event.setCanceled(true);
             }
         }
 
-        /**
-         * Cancel dimension travel when the target dimension's registry name
-         * matches an {@link RestrictionType#ENTER_DIMENSION} restriction.
-         */
         @SubscribeEvent
-        public static void onTravelToDimension(EntityTravelToDimensionEvent event) {
-            Level level = event.getEntity().level();
-            if (!(level instanceof ServerLevel)) {
-                return;
-            }
-            ResourceLocation id = event.getDimension().location();
-            if (id != null && isRestricted(id, RestrictionType.ENTER_DIMENSION)) {
+        static void onTravelToDimension(@NotNull EntityTravelToDimensionEvent event) {
+            var id = event.getDimension().location();
+            if (isRestricted(RestrictionType.ENTER_DIMENSION, id)) {
                 event.setCanceled(true);
             }
-        }
-
-        // ── Registry-name helpers ──
-
-        /**
-         * Resolve a block's registry name via {@link BuiltInRegistries}.
-         */
-        private static ResourceLocation getBlockId(Block block) {
-            return BuiltInRegistries.BLOCK.getKey(block);
-        }
-
-        /**
-         * Resolve an item's registry name via {@link BuiltInRegistries}.
-         */
-        private static ResourceLocation getItemId(Item item) {
-            return BuiltInRegistries.ITEM.getKey(item);
-        }
-
-        /**
-         * Resolve an entity type's registry name via {@link BuiltInRegistries}.
-         */
-        private static ResourceLocation getEntityTypeId(EntityType<?> type) {
-            return BuiltInRegistries.ENTITY_TYPE.getKey(type);
         }
     }
 }

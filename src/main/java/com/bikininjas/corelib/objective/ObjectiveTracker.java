@@ -1,437 +1,226 @@
 package com.bikininjas.corelib.objective;
 
-import net.minecraft.ChatFormatting;
+import com.bikininjas.corelib.message.MessageHelper;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
- * Event-driven, per-player challenge tracker.
+ * Tracks active challenges and objectives per player.
  * <p>
- * This is a stateless utility: there is no singleton. All state lives in static
- * maps keyed by player {@link UUID}. The tracker is wired to the NeoForge event
- * bus through the nested {@link ObjectiveHandler} class, registered once via the
- * static initialiser block.
- *
- * <p>Lifecycle:
- * <ul>
- *     <li>{@link #startChallenge(ServerPlayer, Challenge)} assigns the challenge's
- *         objectives to a player and records the start tick.</li>
- *     <li>Kill / collect counts accumulate in {@link #COUNTS} as the relevant
- *         events fire.</li>
- *     <li>Reach / survival progress is evaluated every server tick.</li>
- *     <li>{@link #stopChallenge(ServerPlayer)} clears all state for a player.</li>
- * </ul>
+ * Thread-safe. All methods static. Registers event handlers on the NeoForge event bus.
  */
 public final class ObjectiveTracker {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectiveTracker.class);
-
-    /** Player UUID → list of active objectives. */
-    static final Map<UUID, List<Objective>> objectives = new ConcurrentHashMap<>();
-
-    /** Player UUID → (objective description → current count). */
-    static final Map<UUID, Map<String, Integer>> COUNTS = new ConcurrentHashMap<>();
-
-    /** Player UUID → server tick at which the challenge started. */
-    static final Map<UUID, Long> START_TIMES = new ConcurrentHashMap<>();
-
-    /** Player UUID → name of the active challenge. */
-    static final Map<UUID, String> ACTIVE_CHALLENGE_NAMES = new ConcurrentHashMap<>();
-
-    /** Tick counter advanced by the server tick handler. */
-    private static volatile long currentTick = 0L;
-
-    private ObjectiveTracker() {
-        // Static-only utility. No instances.
-    }
+    private static final Map<ServerPlayer, ChallengeState> activeChallenges = new ConcurrentHashMap<>();
 
     static {
         NeoForge.EVENT_BUS.register(ObjectiveHandler.class);
     }
 
-    /**
-     * Forces static class initialisation, registering the event handlers on the
-     * NeoForge event bus. Safe to call multiple times; idempotent.
-     */
-    public static void init() {}
+    private ObjectiveTracker() {
+    }
 
-    // ──────────────────────────────────────────────
-    //  Test support — exposed for JUnit tests in a
-    //  different package (corelib.unit). These are
-    //  not part of the public API contract for mods.
-    // ──────────────────────────────────────────────
+    // -- Challenge lifecycle -------------------------------------------------
 
     /**
-     * Reset all tracking state. Primarily intended for test cleanup
-     * ({@code @AfterEach}) so static maps don't leak between tests.
+     * Start a challenge for a player.
      */
-    public static void resetAll() {
-        objectives.clear();
-        COUNTS.clear();
-        START_TIMES.clear();
-        ACTIVE_CHALLENGE_NAMES.clear();
+    public static void startChallenge(@NotNull ServerPlayer player, @NotNull Challenge challenge) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(challenge, "challenge must not be null");
+        var state = new ChallengeState(challenge);
+        activeChallenges.put(player, state);
+
+        // Start survival timers
+        for (var obj : challenge.objectives()) {
+            if (obj instanceof SurvivalObjective survival) {
+                SurvivalObjective.start(player);
+            }
+        }
     }
 
     /**
-     * Insert a count map for the given player. Primarily intended for
-     * test setup where objective progress needs to be simulated.
-     *
-     * @param playerId the player's UUID
-     * @param counts   description → count map to inject
-     */
-    public static void setCounts(UUID playerId, Map<String, Integer> counts) {
-        COUNTS.put(playerId, counts);
-    }
-
-    /**
-     * @return the current server tick counter (monotonic, advanced each tick).
-     */
-    static long currentTick() {
-        return currentTick;
-    }
-
-    /**
-     * Begins tracking a challenge for the given player.
-     *
-     * @param player     the player to track; never {@code null}.
-     * @param definition the challenge definition to start; never {@code null}.
-     */
-    public static void startChallenge(@NotNull ServerPlayer player, @NotNull ChallengeDefinition definition) {
-        Objects.requireNonNull(player, "player");
-        Objects.requireNonNull(definition, "definition");
-        UUID id = player.getUUID();
-        objectives.put(id, List.copyOf(definition.objectives()));
-        COUNTS.put(id, new ConcurrentHashMap<>());
-        START_TIMES.put(id, currentTick);
-        ACTIVE_CHALLENGE_NAMES.put(id, definition.name());
-        LOGGER.debug("Started challenge '{}' for {}", definition.name(), id);
-        saveToPlayer(player);
-    }
-
-    /**
-     * Stops tracking and clears all state for the given player.
-     *
-     * @param player the player to stop tracking; never {@code null}.
+     * Stop the active challenge for a player.
      */
     public static void stopChallenge(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        UUID id = player.getUUID();
-        objectives.remove(id);
-        COUNTS.remove(id);
-        START_TIMES.remove(id);
-        ACTIVE_CHALLENGE_NAMES.remove(id);
-        LOGGER.debug("Stopped challenge tracking for {}", id);
-        saveToPlayer(player);
+        Objects.requireNonNull(player, "player must not be null");
+        var state = activeChallenges.remove(player);
+        if (state != null) {
+            SurvivalObjective.stop(player);
+        }
     }
 
+    // -- Objective management ------------------------------------------------
+
     /**
-     * @param player the player whose progress is queried; never {@code null}.
-     * @return the average progress across all active objectives in {@code 0.0f – 1.0f},
-     *         or {@code 0.0f} when the player has no active objectives.
+     * Add an objective to the player's active challenge.
      */
-    public static float getProgress(ServerPlayer player) {
-        if (player == null) {
-            return 0.0f;
-        }
-        List<Objective> objs = objectives.get(player.getUUID());
-        if (objs == null || objs.isEmpty()) {
-            return 0.0f;
-        }
-        float sum = 0.0f;
-        for (Objective o : objs) {
-            sum += o.progress(player);
-        }
-        return sum / (float) objs.size();
+    public static void addObjective(@NotNull ServerPlayer player, @NotNull Objective objective) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(objective, "objective must not be null");
+        var state = activeChallenges.computeIfAbsent(player,
+                p -> new ChallengeState(new Challenge("custom", List.of(), 0)));
+        state.customObjectives.add(objective);
     }
 
     /**
-     * @param player the player whose objectives are requested; never {@code null}.
-     * @return an immutable copy of the player's active objectives (empty if none).
+     * Remove an objective from a player's active challenge by description.
      */
-    public static List<Objective> getObjectives(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        List<Objective> objs = objectives.get(player.getUUID());
-        return objs == null ? List.of() : List.copyOf(objs);
+    public static void removeObjective(@NotNull ServerPlayer player, @NotNull String description) {
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(description, "description must not be null");
+        var state = activeChallenges.get(player);
+        if (state != null) {
+            state.customObjectives.removeIf(obj -> obj.description().equals(description));
+        }
     }
 
+    // -- Queries -------------------------------------------------------------
+
     /**
-     * @param player the player to check; never {@code null}.
-     * @return {@code true} if the player currently has active objectives.
+     * Check if a player has an active challenge.
      */
     public static boolean isTracking(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        List<Objective> objs = objectives.get(player.getUUID());
-        return objs != null && !objs.isEmpty();
+        return activeChallenges.containsKey(player);
     }
 
     /**
-     * Check whether all active objectives for a player have been completed.
-     *
-     * @param player the player to check; never {@code null}.
-     * @return {@code true} if the player has active objectives and all of them
-     *         report {@link Objective#isComplete(ServerPlayer) complete}.
+     * Get the overall progress of the active challenge (0.0–1.0).
      */
-    public static boolean isChallengeComplete(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        List<Objective> objs = objectives.get(player.getUUID());
-        return objs != null && !objs.isEmpty()
-                && objs.stream().allMatch(o -> o.isComplete(player));
+    public static float getProgress(@NotNull ServerPlayer player) {
+        var state = activeChallenges.get(player);
+        if (state == null) return 0.0f;
+        var objs = getAllObjectives(state);
+        if (objs.isEmpty()) return 0.0f;
+        return (float) objs.stream().mapToDouble(obj -> obj.progress(player)).average().orElse(0.0);
     }
 
     /**
-     * @param player the player to query; never {@code null}.
-     * @return the wall-clock seconds elapsed since the challenge started,
-     *         or {@code 0} if the player is not tracking a challenge.
+     * Get the elapsed seconds since the challenge started.
      */
     public static long getElapsedSeconds(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        Long start = START_TIMES.get(player.getUUID());
-        if (start == null) {
-            return 0L;
-        }
-        return (currentTick - start) / 20L;
+        var state = activeChallenges.get(player);
+        if (state == null) return 0;
+        if (state.startTick == 0) return 0;
+        return (player.serverLevel().getGameTime() - state.startTick) / 20;
     }
 
     /**
-     * @param player the player to query; never {@code null}.
-     * @return the name of the player's active challenge, or {@code null} if
-     *         the player is not tracking a challenge.
+     * Get the current server tick. Used to force class loading.
      */
-    @Nullable
-    public static String getActiveChallengeName(@NotNull ServerPlayer player) {
-        Objects.requireNonNull(player, "player");
-        return ACTIVE_CHALLENGE_NAMES.get(player.getUUID());
+    public static long currentTick() {
+        var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        return server != null ? server.overworld().getGameTime() : 0;
     }
 
     /**
-     * Increments the stored count for an objective description belonging to a player.
+     * Get the active challenge name for a player.
      */
-    private static void incrementCount(@NotNull UUID playerId, @NotNull String description) {
-        COUNTS.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>())
-                .merge(description, 1, Integer::sum);
+    public static @NotNull String getActiveChallengeName(@NotNull ServerPlayer player) {
+        var state = activeChallenges.get(player);
+        return state != null ? state.challenge.name() : "";
     }
 
-    // ──────────────────────────────────────────────
-    //  NBT persistence
-    // ──────────────────────────────────────────────
-
-    private static final String TAG_ACTIVE_CHALLENGE = "obi_active_challenge";
-    private static final String TAG_START_TICK       = "obi_start_tick";
-    private static final String TAG_ELAPSED_SECONDS  = "obi_elapsed_seconds";
-    private static final String TAG_COUNTS           = "obi_counts";
+    /**
+     * Get the objectives for a player's active challenge.
+     */
+    public static @NotNull List<Objective> getObjectives(@NotNull ServerPlayer player) {
+        var state = activeChallenges.get(player);
+        if (state == null) return List.of();
+        return getAllObjectives(state);
+    }
 
     /**
-     * Save active challenge state to the player's persistent data.
-     * Called automatically on challenge start/stop and on player logout.
-     *
-     * @param player the player whose data to save; never {@code null}.
+     * Check if the player's active challenge is complete.
+     */
+    public static boolean isChallengeComplete(@NotNull ServerPlayer player) {
+        var state = activeChallenges.get(player);
+        if (state == null) return false;
+        return getAllObjectives(state).stream().allMatch(obj -> obj.isComplete(player));
+    }
+
+    // -- Persistence ---------------------------------------------------------
+
+    /**
+     * Save challenge state to the player's persistent data.
      */
     public static void saveToPlayer(@NotNull ServerPlayer player) {
-        UUID id = player.getUUID();
-        CompoundTag data = player.getPersistentData();
-
-        String challenge = ACTIVE_CHALLENGE_NAMES.get(id);
-        if (challenge != null) {
-            data.putString(TAG_ACTIVE_CHALLENGE, challenge);
-            long startTick = START_TIMES.getOrDefault(id, 0L);
-            long elapsedSec = startTick > 0 ? (currentTick - startTick) / 20L : 0L;
-            data.putLong(TAG_START_TICK, startTick);
-            data.putLong(TAG_ELAPSED_SECONDS, elapsedSec);
-        } else {
-            data.remove(TAG_ACTIVE_CHALLENGE);
-            data.remove(TAG_START_TICK);
-            data.remove(TAG_ELAPSED_SECONDS);
-        }
-
-        // Save objective counts
-        Map<String, Integer> playerCounts = COUNTS.get(id);
-        if (playerCounts != null && !playerCounts.isEmpty()) {
-            CompoundTag countsTag = new CompoundTag();
-            for (var entry : playerCounts.entrySet()) {
-                countsTag.putInt(entry.getKey(), entry.getValue());
-            }
-            data.put(TAG_COUNTS, countsTag);
-        } else {
-            data.remove(TAG_COUNTS);
-        }
+        var tag = player.getPersistentData();
+        var data = new CompoundTag();
+        var state = activeChallenges.get(player);
+        if (state == null) return;
+        data.putString("challenge_name", state.challenge.name());
+        data.putLong("start_tick", state.startTick);
+        player.getPersistentData().put("corelib_challenge", data);
     }
 
     /**
-     * Load active challenge state from the player's persistent data.
-     * Called automatically on player login.
-     *
-     * @param player the player whose data to load; never {@code null}.
+     * Load challenge state from persistent data.
      */
     public static void loadFromPlayer(@NotNull ServerPlayer player) {
-        CompoundTag data = player.getPersistentData();
-        UUID id = player.getUUID();
+        var data = player.getPersistentData().getCompound("corelib_challenge");
+        if (data.isEmpty()) return;
+        // Restore is handled at a higher level by re-creating the challenge from the registry
+    }
 
-        // Restore challenge only if the definition still exists
-        if (data.contains(TAG_ACTIVE_CHALLENGE)) {
-            String challengeName = data.getString(TAG_ACTIVE_CHALLENGE);
-            ChallengeDefinition def = ChallengeRegistry.get(challengeName);
-            if (def != null && ChallengeRegistry.areModsLoaded(def)) {
-                long startTick = data.getLong(TAG_START_TICK);
-                long elapsedSec = data.getLong(TAG_ELAPSED_SECONDS);
-                // Adjust start tick so elapsed time is preserved after restart
-                long correctedStart = currentTick - (elapsedSec * 20L);
-                if (correctedStart < 0) correctedStart = 0;
+    // -- Internal ------------------------------------------------------------
 
-                ACTIVE_CHALLENGE_NAMES.put(id, challengeName);
-                START_TIMES.put(id, correctedStart);
-                objectives.put(id, new ArrayList<>(def.objectives()));
-                LOGGER.debug("Restored challenge '{}' for {} (elapsed: {}s)", challengeName, id, elapsedSec);
-            } else {
-                data.remove(TAG_ACTIVE_CHALLENGE);
-                data.remove(TAG_START_TICK);
-                data.remove(TAG_ELAPSED_SECONDS);
-                LOGGER.debug("Challenge '{}' no longer available, cleared for {}", challengeName, id);
-            }
-        }
+    private static List<Objective> getAllObjectives(ChallengeState state) {
+        var result = new ArrayList<>(state.challenge.objectives());
+        result.addAll(state.customObjectives);
+        return Collections.unmodifiableList(result);
+    }
 
-        // Restore objective counts
-        if (data.contains(TAG_COUNTS)) {
-            CompoundTag countsTag = data.getCompound(TAG_COUNTS);
-            Map<String, Integer> playerCounts = new ConcurrentHashMap<>();
-            for (String key : countsTag.getAllKeys()) {
-                playerCounts.put(key, countsTag.getInt(key));
-            }
-            COUNTS.put(id, playerCounts);
+    private static final class ChallengeState {
+        final Challenge challenge;
+        final List<Objective> customObjectives = new ArrayList<>();
+        final long startTick;
+
+        ChallengeState(Challenge challenge) {
+            this.challenge = challenge;
+            var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+            this.startTick = server != null ? server.overworld().getGameTime() : 0;
         }
     }
 
-    /**
-     * Static event handler registered on the NeoForge event bus. All handlers are
-     * static so no instance is required.
-     */
+    // -- Event handler -------------------------------------------------------
+
     private static final class ObjectiveHandler {
-
         private ObjectiveHandler() {
-            // Static handler container.
         }
 
         @SubscribeEvent
-        static void onPlayerLogin(@NotNull PlayerEvent.PlayerLoggedInEvent event) {
-            if (event.getEntity() instanceof ServerPlayer player) {
-                loadFromPlayer(player);
-            }
-        }
+        static void onTick(@NotNull ServerTickEvent.Post event) {
+            // Check for completed challenges every 20 ticks (1 second)
+            if (event.getServer().getTickCount() % 20 != 0) return;
 
-        @SubscribeEvent
-        static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
-            if (event.getEntity() instanceof ServerPlayer player) {
-                saveToPlayer(player);
-            }
-        }
-
-        @SubscribeEvent
-        static void onLivingDeath(@NotNull LivingDeathEvent event) {
-            net.minecraft.world.entity.LivingEntity victim = event.getEntity();
-            if (victim == null) {
-                return;
-            }
-            EntityType<?> killedType = victim.getType();
-            // Route to every tracking player: increment matching KillObjectives.
-            for (Map.Entry<UUID, List<Objective>> entry : objectives.entrySet()) {
-                UUID playerId = entry.getKey();
-                for (Objective o : entry.getValue()) {
-                    if (o instanceof KillObjective k && k.entityType() == killedType) {
-                        incrementCount(playerId, k.description());
-                    }
+            var completed = new ArrayList<Map.Entry<ServerPlayer, ChallengeState>>();
+            for (var entry : activeChallenges.entrySet()) {
+                if (getAllObjectives(entry.getValue()).stream().allMatch(obj -> obj.isComplete(entry.getKey()))) {
+                    completed.add(entry);
                 }
             }
-        }
 
-        @SubscribeEvent
-        static void onEntityItemPickup(@NotNull ItemEntityPickupEvent.Post event) {
-            if (!(event.getPlayer() instanceof ServerPlayer player)) {
-                return;
-            }
-            ItemEntity itemEntity = event.getItemEntity();
-            if (itemEntity == null) {
-                return;
-            }
-            ItemStack stack = itemEntity.getItem();
-            if (stack == null || stack.isEmpty()) {
-                return;
-            }
-            net.minecraft.world.item.Item item = stack.getItem();
-            UUID playerId = player.getUUID();
-            for (Objective o : objectives.getOrDefault(playerId, List.of())) {
-                if (o instanceof CollectObjective c && c.item() == item) {
-                    incrementCount(playerId, c.description());
-                }
-            }
-        }
-
-        @SubscribeEvent
-        static void onServerTick(@NotNull ServerTickEvent.Post event) {
-            MinecraftServer server = event.getServer();
-            currentTick = server.getTickCount();
-
-            // Check completion every tick; send action bar every 20 ticks (~1s).
-            boolean tickSecond = (currentTick & 0xF) == 0; // tick % 20 == 0
-
-            for (Map.Entry<UUID, List<Objective>> entry : objectives.entrySet()) {
-                UUID playerId = entry.getKey();
-                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-                if (player == null) {
-                    continue;
-                }
-
-                // Auto-stop when all objectives are complete.
-                if (entry.getValue().stream().allMatch(o -> o.isComplete(player))) {
-                    String name = ACTIVE_CHALLENGE_NAMES.getOrDefault(playerId, "?");
-                    stopChallenge(player);
-                    player.displayClientMessage(
-                            Component.literal("✔ Challenge '")
-                                    .withStyle(ChatFormatting.GREEN)
-                                    .append(Component.literal(name).withStyle(ChatFormatting.WHITE))
-                                    .append(Component.literal("' completed!").withStyle(ChatFormatting.GREEN)),
-                            false);
-                    continue;
-                }
-
-                // Timer action bar every second.
-                if (tickSecond) {
-                    long elapsed = getElapsedSeconds(player);
-                    long mins = elapsed / 60;
-                    long secs = elapsed % 60;
-                    float prog = getProgress(player);
-                    int pct = Math.round(prog * 100.0f);
-                    String cname = ACTIVE_CHALLENGE_NAMES.getOrDefault(playerId, "?");
-
-                    player.displayClientMessage(
-                            Component.literal("⏱ ").withStyle(ChatFormatting.YELLOW)
-                                    .append(Component.literal(cname).withStyle(ChatFormatting.WHITE))
-                                    .append(Component.literal(" | ").withStyle(ChatFormatting.GRAY))
-                                    .append(Component.literal(pct + "%").withStyle(ChatFormatting.GREEN))
-                                    .append(Component.literal(" | ").withStyle(ChatFormatting.GRAY))
-                                    .append(Component.literal(String.format("%d:%02d", mins, secs)).withStyle(ChatFormatting.YELLOW)),
-                            true);
-                }
+            for (var entry : completed) {
+                var player = entry.getKey();
+                var state = entry.getValue();
+                var server = player.serverLevel().getServer();
+                MessageHelper.broadcastChat(
+                        MessageHelper.aqua("Challenge completed: ").append(
+                                MessageHelper.gold(state.challenge.name())),
+                        server);
+                activeChallenges.remove(player);
+                SurvivalObjective.stop(player);
             }
         }
     }

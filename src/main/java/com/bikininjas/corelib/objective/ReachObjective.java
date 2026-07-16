@@ -4,13 +4,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Objects;
+
 /**
- * Objective requiring the player to stand within {@code radius} blocks of a
- * target position.
- * <p>
- * Completion is binary: the player is either inside the radius (progress 1.0) or
- * not (progress 0.0). The distance is evaluated on every server tick by
- * {@link ObjectiveTracker}.
+ * Objective: reach a specific location within a given radius.
  */
 public record ReachObjective(
         @NotNull String description,
@@ -18,10 +15,17 @@ public record ReachObjective(
         double radius
 ) implements Objective {
 
+    public ReachObjective {
+        Objects.requireNonNull(description, "description must not be null");
+        Objects.requireNonNull(targetPos, "targetPos must not be null");
+    }
+
     @Override
     public boolean isComplete(@NotNull ServerPlayer player) {
-        return player.distanceToSqr(
-                targetPos.getX() + 0.5, targetPos.getY() + 0.5, targetPos.getZ() + 0.5
+        return player.position().distanceToSqr(
+                targetPos.getX() + 0.5,
+                targetPos.getY() + 0.5,
+                targetPos.getZ() + 0.5
         ) <= radius * radius;
     }
 
@@ -32,7 +36,7 @@ public record ReachObjective(
 
     @Override
     public int progressValue(@NotNull ServerPlayer player) {
-        return isComplete(player) ? target() : 0;
+        return isComplete(player) ? 1 : 0;
     }
 
     @Override
@@ -41,7 +45,7 @@ public record ReachObjective(
     }
 
     @Override
-    public ObjectiveType type() {
+    public @NotNull ObjectiveType type() {
         return ObjectiveType.REACH;
     }
 }

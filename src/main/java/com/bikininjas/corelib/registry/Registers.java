@@ -1,54 +1,51 @@
 package com.bikininjas.corelib.registry;
 
-import com.bikininjas.corelib.CoreLib;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.entity.EntityType;
 import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredRegister;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Central registry holder for all CoreLib content.
+ * Centralized DeferredRegisters for core-lib.
  * <p>
- * Each DeferredRegister is created once here and can be referenced from
- * child mods via {@code Registers.ITEMS}, {@code Registers.BLOCKS}, etc.
- * Child mods register their own content through their own DeferredRegisters.
+ * Currently empty (no concrete items/blocks defined in this library).
+ * Child mods use these registers when they want to add content through core-lib's
+ * registration bus, or they create their own local DeferredRegister instances.
  */
 public final class Registers {
 
-    private Registers() {}
+    private Registers() {
+    }
 
-    // ──────────────────────────────────────────────
-    //  Main registries
-    // ──────────────────────────────────────────────
+    // -- Registries ----------------------------------------------------------
 
+    /** Items DeferredRegister (core_lib namespace). */
     public static final DeferredRegister.Items ITEMS =
-            DeferredRegister.createItems(CoreLib.MODID);
+            DeferredRegister.createItems(com.bikininjas.corelib.CoreLib.MODID);
 
-    public static final DeferredRegister<Block> BLOCKS =
-            DeferredRegister.create(Registries.BLOCK, CoreLib.MODID);
+    /** Blocks DeferredRegister (core_lib namespace). */
+    public static final DeferredRegister.Blocks BLOCKS =
+            DeferredRegister.createBlocks(com.bikininjas.corelib.CoreLib.MODID);
 
+    /** Block entity types DeferredRegister (core_lib namespace). */
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES =
-            DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CoreLib.MODID);
+            DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, com.bikininjas.corelib.CoreLib.MODID);
 
+    /** Entity types DeferredRegister (core_lib namespace). */
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
-            DeferredRegister.create(Registries.ENTITY_TYPE, CoreLib.MODID);
+            DeferredRegister.create(Registries.ENTITY_TYPE, com.bikininjas.corelib.CoreLib.MODID);
 
-    // ──────────────────────────────────────────────
-    //  Convenience helpers
-    // ──────────────────────────────────────────────
+    // -- Helpers -------------------------------------------------------------
 
     /**
-     * Register a simple item with no special properties.
+     * Register a simple item with default properties.
      */
     public static DeferredHolder<Item, Item> simpleItem(String name) {
         return ITEMS.registerSimpleItem(name);
@@ -64,56 +61,45 @@ public final class Registers {
     /**
      * Register an item with a custom factory.
      */
-    public static <I extends Item> DeferredHolder<Item, I> item(
-            String name, Supplier<? extends I> factory
-    ) {
-        return ITEMS.register(name, factory);
+    public static <T extends Item> DeferredHolder<Item, T> item(String name, Function<Item.Properties, T> factory) {
+        return ITEMS.registerItem(name, factory);
     }
 
     /**
-     * Register a block and its corresponding BlockItem in one call.
+     * Register a block with an automatic {@link BlockItem}.
      *
-     * @return a pair containing [block holder, item holder]
+     * @return a pair of holders (block, item)
      */
-    public static Registration<Block, Item> blockWithItem(
-            String name, Supplier<? extends Block> blockFactory
-    ) {
-        var blockHolder = BLOCKS.register(name, blockFactory);
-        var itemHolder = ITEMS.register(name,
-                () -> new BlockItem(blockHolder.get(), new Item.Properties()));
-        return new Registration<Block, Item>(blockHolder, itemHolder);
+    public static Registration<Block, BlockItem> blockWithItem(String name, Supplier<Block> blockFactory) {
+        var block = BLOCKS.register(name, blockFactory);
+        var item = ITEMS.registerSimpleBlockItem(name, block);
+        return new Registration<>(block, item);
     }
 
     /**
      * Register a block entity type.
      */
-    public static <T extends BlockEntity> DeferredHolder<BlockEntityType<?>, BlockEntityType<T>> blockEntity(
-            String name, Supplier<? extends BlockEntityType<T>> factory
-    ) {
-        @SuppressWarnings("unchecked")
-        var holder = (DeferredHolder<BlockEntityType<?>, BlockEntityType<T>>)
-                (DeferredHolder<?, ?>) BLOCK_ENTITY_TYPES.register(name, factory);
-        return holder;
+    public static <T extends BlockEntityType<?>> DeferredHolder<BlockEntityType<?>, T> blockEntity(
+            String name, Supplier<T> factory) {
+        return BLOCK_ENTITY_TYPES.register(name, factory);
     }
 
     /**
      * Register an entity type.
      */
-    public static <T extends Mob> DeferredHolder<EntityType<?>, EntityType<T>> entity(
-            String name, EntityType.Builder<T> builder
-    ) {
-        @SuppressWarnings("unchecked")
-        var holder = (DeferredHolder<EntityType<?>, EntityType<T>>)
-                (DeferredHolder<?, ?>) ENTITY_TYPES.register(name, () -> builder.build(name));
-        return holder;
+    public static <T extends EntityType<?>> DeferredHolder<EntityType<?>, T> entity(
+            String name, Supplier<T> builder) {
+        return ENTITY_TYPES.register(name, builder);
     }
 
-    // ──────────────────────────────────────────────
-    //  Result carrier
-    // ──────────────────────────────────────────────
+    // -- Value type for paired registrations ---------------------------------
 
+    /**
+     * Holds a pair of (block, item) registration results.
+     */
     public record Registration<B extends Block, I extends Item>(
-            DeferredHolder<Block, ? extends B> block,
-            DeferredHolder<Item, ? extends I> item
-    ) {}
+            DeferredHolder<Block, B> block,
+            DeferredHolder<Item, I> item
+    ) {
+    }
 }

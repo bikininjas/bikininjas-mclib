@@ -1,173 +1,130 @@
 package com.bikininjas.corelib.kit;
 
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Static, thread-safe registry of {@link Kit}s and the entry point for handing
- * them to players.
+ * Thread-safe static registry of {@link Kit} definitions.
  * <p>
- * This is a utility class: it is {@code final}, cannot be instantiated, and
- * exposes only static methods. Kits are stored in a {@link ConcurrentHashMap}
- * keyed by name, so registration and lookup are safe to call from multiple
- * threads (e.g. parallel mod loading or command dispatch).
- * <p>
- * The registry is intentionally decoupled from any event bus, config system or
- * other core-lib module — it has no static initialiser and no runtime
- * dependencies, which keeps it usable from pure unit tests.
+ * All methods are static. No event bus registration.
  */
 public final class KitManager {
 
-    /** Registered kits keyed by name. Concurrent for safe multi-thread access. */
-    private static final ConcurrentHashMap<String, Kit> registry = new ConcurrentHashMap<>();
+    private static final Map<String, Kit> kits = new ConcurrentHashMap<>();
 
-    /** Utility class — never instantiated. */
     private KitManager() {
     }
 
-    // ──────────────────────────────────────────────
-    //  Registration
-    // ──────────────────────────────────────────────
-
     /**
-     * Register (or overwrite) a kit under the given name.
-     *
-     * @param name the registry key (non-null, non-blank)
-     * @param kit  the kit to store (non-null)
-     * @throws NullPointerException     if {@code name} or {@code kit} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is blank
+     * Register a kit. If a kit with the same name already exists, it is overwritten.
      */
-    public static void register(String name, Kit kit) {
-        Objects.requireNonNull(name, "name must not be null");
+    public static void register(@NotNull Kit kit) {
         Objects.requireNonNull(kit, "kit must not be null");
-        if (name.isBlank()) {
-            throw new IllegalArgumentException("name must not be blank");
-        }
-        registry.put(name, kit);
+        kits.put(kit.name(), kit);
     }
 
     /**
-     * Look up a registered kit by name.
+     * Get a kit by name.
      *
-     * @param name the registry key (non-null)
-     * @return the kit, or {@code null} if no kit is registered under that name
-     * @throws NullPointerException if {@code name} is {@code null}
+     * @return the kit, or null if not found
      */
-    public static Kit get(String name) {
+    public static @Nullable Kit get(@NotNull String name) {
         Objects.requireNonNull(name, "name must not be null");
-        return registry.get(name);
+        return kits.get(name);
     }
 
     /**
-     * @return a snapshot copy of all registered kit names (never {@code null})
+     * Get all registered kit names.
      */
-    public static Collection<String> getAll() {
-        return Collections.unmodifiableSet(registry.keySet());
+    public static @NotNull List<String> getAll() {
+        return List.copyOf(kits.keySet());
     }
 
     /**
-     * Remove a kit from the registry.
-     * <p>
-     * Removing a name that is not registered is a no-op and does not throw.
-     *
-     * @param name the registry key to remove (non-null)
-     * @throws NullPointerException if {@code name} is {@code null}
+     * Remove a kit by name.
      */
-    public static void remove(String name) {
+    public static void remove(@NotNull String name) {
         Objects.requireNonNull(name, "name must not be null");
-        registry.remove(name);
+        kits.remove(name);
     }
 
     /**
-     * Remove every kit from the registry.
+     * Clear all registered kits.
      */
     public static void clear() {
-        registry.clear();
+        kits.clear();
     }
 
-    // ──────────────────────────────────────────────
-    //  Application
-    // ──────────────────────────────────────────────
-
     /**
-     * Hand a registered kit to a player, fully replacing their current loadout.
-     * <p>
-     * The player's inventory is cleared first, then the kit's main items are
-     * placed into the first available inventory slots (extras are dropped if the
-     * inventory is full), the four armor pieces are set into their dedicated
-     * slots, the offhand item is equipped, and every status effect is applied.
+     * Give a kit to a player. Equips armor if applicable, puts items in inventory.
      *
-     * @param player the target player (non-null)
-     * @param name   the registry key of the kit to give (non-null)
-     * @return {@code true} if the kit was found and applied, {@code false} if no
-     *         kit is registered under {@code name}
-     * @throws NullPointerException if {@code player} or {@code name} is {@code null}
+     * @return true if the kit was found and given, false if the kit name is unknown
      */
-    public static boolean give(ServerPlayer player, String name) {
+    public static boolean give(@NotNull ServerPlayer player, @NotNull String name) {
+        Objects.requireNonNull(player, "player must not be null");
         Objects.requireNonNull(name, "name must not be null");
 
-        Kit kit = registry.get(name);
+        var kit = kits.get(name);
         if (kit == null) {
             return false;
         }
 
-        // Validate the player only once we know a kit exists and we are about
-        // to mutate its inventory — an unknown name still returns false.
-        Objects.requireNonNull(player, "player must not be null");
-
-        var inventory = player.getInventory();
-
-        // Clear the existing loadout (main + armor + offhand).
-        inventory.clearContent();
-
-        // Main inventory items — fill the first 36 slots, drop the rest.
-        if (kit.items() != null) {
-            int maxSlots = Math.min(inventory.getContainerSize(), 36);
-            int slot = 0;
-            for (ItemStack item : kit.items()) {
-                if (item == null || item.isEmpty()) {
-                    continue;
-                }
-                if (slot < maxSlots) {
-                    inventory.setItem(slot, item.copy());
-                    slot++;
-                } else {
-                    player.drop(item.copy(), true);
-                }
+        // Items → inventory
+        for (var stack : kit.items()) {
+            if (!stack.isEmpty()) {
+                player.getInventory().add(stack.copy());
             }
         }
 
-        // Armor — indexed as [boots, leggings, chestplate, helmet].
-        if (kit.armor() != null) {
-            for (int i = 0; i < 4 && i < kit.armor().length; i++) {
-                ItemStack piece = kit.armor()[i];
-                if (piece != null && !piece.isEmpty()) {
-                    inventory.armor.set(i, piece.copy());
-                }
+        // Armor → equip if slot empty, otherwise add to inventory
+        var armorList = kit.armor();
+        if (armorList.size() >= 1 && !armorList.get(0).isEmpty()) {
+            giveArmor(player, armorList.get(0).copy(), EquipmentSlot.HEAD);
+        }
+        if (armorList.size() >= 2 && !armorList.get(1).isEmpty()) {
+            giveArmor(player, armorList.get(1).copy(), EquipmentSlot.CHEST);
+        }
+        if (armorList.size() >= 3 && !armorList.get(2).isEmpty()) {
+            giveArmor(player, armorList.get(2).copy(), EquipmentSlot.LEGS);
+        }
+        if (armorList.size() >= 4 && !armorList.get(3).isEmpty()) {
+            giveArmor(player, armorList.get(3).copy(), EquipmentSlot.FEET);
+        }
+
+        // Offhand
+        var offhand = kit.offhand();
+        if (!offhand.isEmpty()) {
+            var currentOffhand = player.getOffhandItem();
+            if (currentOffhand.isEmpty()) {
+                player.setItemSlot(EquipmentSlot.OFFHAND, offhand.copy());
+            } else {
+                player.getInventory().add(offhand.copy());
             }
         }
 
-        // Offhand.
-        if (kit.offhand() != null && !kit.offhand().isEmpty()) {
-            inventory.offhand.set(0, kit.offhand().copy());
+        // Effects
+        for (var effect : kit.effects()) {
+            player.addEffect(effect);
         }
 
-        // Status effects.
-        if (kit.effects() != null) {
-            for (MobEffectInstance effect : kit.effects()) {
-                if (effect != null) {
-                    player.addEffect(new MobEffectInstance(effect));
-                }
-            }
-        }
-
-        player.inventoryMenu.broadcastChanges();
         return true;
+    }
+
+    private static void giveArmor(ServerPlayer player, ItemStack stack, EquipmentSlot slot) {
+        var current = player.getItemBySlot(slot);
+        if (current.isEmpty()) {
+            player.setItemSlot(slot, stack);
+        } else {
+            player.getInventory().add(stack);
+        }
     }
 }

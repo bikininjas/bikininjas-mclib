@@ -3,84 +3,79 @@ package com.bikininjas.corelib.enchantment;
 import net.minecraft.core.Holder;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * Static utilities for applying high-level (above vanilla max) enchantments.
+ * Utilities for applying enchantments with a hard cap at level 100.
  * <p>
- * Vanilla Minecraft caps enchantment levels at the enchantment's defined
- * {@link Enchantment#getMaxLevel()}. These helpers allow enchanting up to
- * level {@link #MAX_LEVEL} by relying on
- * {@link ItemStack#enchant(Holder, int)}, which bypasses the max-level
- * validation performed by the normal enchantment application path.
+ * All methods are static. No event bus registration.
  */
 public final class EnchantmentUtils {
 
-    /** Hard cap for any enchantment level handled by this library. */
+    /** Hard cap for all enchantment levels applied through this API. */
     public static final int MAX_LEVEL = 100;
 
     private EnchantmentUtils() {
-        // Utility class — do not instantiate.
     }
 
     /**
-     * Apply a single enchantment at any level, bypassing the vanilla max-level check.
+     * Apply a single enchantment to an item stack, capped at {@link #MAX_LEVEL}.
      *
-     * @param stack       the item to enchant (mutated and returned for chaining)
-     * @param enchantment the enchantment holder to apply
-     * @param level       the desired level (clamped into {@code [1, MAX_LEVEL]})
-     * @return the same (mutated) {@link ItemStack}
+     * @param stack       the item stack to enchant
+     * @param enchantment the enchantment holder
+     * @param level       the desired level (will be capped to {@code MAX_LEVEL})
      */
-    public static ItemStack applyEnchantment(ItemStack stack, Holder<Enchantment> enchantment, int level) {
-        stack.enchant(enchantment, clamp(level));
-        return stack;
+    public static void applyEnchantment(
+            @NotNull ItemStack stack,
+            @NotNull Holder<Enchantment> enchantment,
+            int level) {
+        Objects.requireNonNull(stack, "stack must not be null");
+        Objects.requireNonNull(enchantment, "enchantment must not be null");
+        var clampedLevel = Math.min(level, MAX_LEVEL);
+        stack.enchant(enchantment, clampedLevel);
     }
 
     /**
-     * Apply multiple enchantments at once, each bypassing the vanilla max-level check.
+     * Apply multiple enchantments to an item stack.
      *
-     * @param stack        the item to enchant (mutated and returned for chaining)
-     * @param enchantments map of enchantment holder to desired level
-     * @return the same (mutated) {@link ItemStack}
+     * @param stack        the item stack to enchant
+     * @param enchantments a map of enchantment holders to levels
      */
-    public static ItemStack applyEnchantments(ItemStack stack, Map<Holder<Enchantment>, Integer> enchantments) {
+    public static void applyEnchantments(
+            @NotNull ItemStack stack,
+            @NotNull Map<Holder<Enchantment>, Integer> enchantments) {
+        Objects.requireNonNull(stack, "stack must not be null");
+        Objects.requireNonNull(enchantments, "enchantments must not be null");
         for (var entry : enchantments.entrySet()) {
-            stack.enchant(entry.getKey(), clamp(entry.getValue()));
+            applyEnchantment(stack, entry.getKey(), entry.getValue());
         }
-        return stack;
     }
 
     /**
-     * Effective maximum level for a given tool: the enchantment's vanilla max level
-     * multiplied by 3, capped at {@link #MAX_LEVEL}.
+     * Get the maximum allowed enchantment level for the given tool and enchantment.
+     * Returns the normal max level, but capped at {@link #MAX_LEVEL}.
      *
      * @param enchantment the enchantment holder
-     * @param tool        the tool/item being enchanted (unused for the cap math)
-     * @return the effective maximum level, never above {@link #MAX_LEVEL}
+     * @param stack       the item stack
+     * @return the max level (≥ 0, ≤ MAX_LEVEL)
      */
-    public static int getMaxLevelForTool(Holder<Enchantment> enchantment, ItemStack tool) {
-        return Math.min(enchantment.value().getMaxLevel() * 3, MAX_LEVEL);
+    public static int getMaxLevelForTool(
+            @NotNull Holder<Enchantment> enchantment,
+            @NotNull ItemStack stack) {
+        Objects.requireNonNull(enchantment, "enchantment must not be null");
+        Objects.requireNonNull(stack, "stack must not be null");
+        var vanillaMax = enchantment.value().getMaxLevel();
+        return Math.min(vanillaMax, MAX_LEVEL);
     }
 
     /**
-     * Whether an enchantment may be applied at the given level.
-     * <p>
-     * Overrides the vanilla check: always allowed as long as {@code level} is within
-     * the library cap {@link #MAX_LEVEL}.
-     *
-     * @param enchantment the enchantment holder
-     * @param level       the desired level
-     * @return {@code true} if {@code level} is within the library cap
+     * Check whether the given level is within the allowed cap.
      */
-    public static boolean canEnchantAtLevel(Holder<Enchantment> enchantment, int level) {
-        return level <= MAX_LEVEL;
-    }
-
-    /**
-     * Clamp a requested level into the valid range {@code [1, MAX_LEVEL]}.
-     */
-    private static int clamp(int level) {
-        return Math.max(1, Math.min(level, MAX_LEVEL));
+    public static boolean canEnchantAtLevel(int level) {
+        return level >= 0 && level <= MAX_LEVEL;
     }
 }

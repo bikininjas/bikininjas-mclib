@@ -3,45 +3,58 @@ package com.bikininjas.corelib.objective;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 /**
- * Objective requiring the player to survive for a number of ticks since the
- * challenge started.
+ * Objective: survive for a given duration (in ticks).
  * <p>
- * The elapsed tick count is derived from the challenge start time recorded in
- * {@link ObjectiveTracker#START_TIMES} and the current server tick counter,
- * evaluated on every server tick. Progress is capped at {@code 1.0f}.
+ * Progress tracks elapsed ticks since the challenge started.
  */
 public record SurvivalObjective(
         @NotNull String description,
         int durationTicks
 ) implements Objective {
 
+    private static final ConcurrentMap<ServerPlayer, Long> startTimes = new ConcurrentHashMap<>();
+
+    public SurvivalObjective {
+        Objects.requireNonNull(description, "description must not be null");
+    }
+
+    /**
+     * Record the start time for a player (called when a challenge begins).
+     */
+    public static void start(@NotNull ServerPlayer player) {
+        Objects.requireNonNull(player, "player must not be null");
+        startTimes.put(player, player.serverLevel().getGameTime());
+    }
+
+    /**
+     * Stop tracking a player.
+     */
+    public static void stop(@NotNull ServerPlayer player) {
+        startTimes.remove(player);
+    }
+
     @Override
     public boolean isComplete(@NotNull ServerPlayer player) {
-        return progress(player) >= 1.0f;
+        return progressValue(player) >= durationTicks;
     }
 
     @Override
     public float progress(@NotNull ServerPlayer player) {
-        long start = ObjectiveTracker.START_TIMES.getOrDefault(player.getUUID(), 0L);
-        if (start == 0L) {
-            return 0.0f;
-        }
-        long elapsed = ObjectiveTracker.currentTick() - start;
-        if (elapsed <= 0) {
-            return 0.0f;
-        }
-        return (float) Math.min(elapsed, durationTicks) / (float) durationTicks;
+        return durationTicks > 0
+                ? Math.min(1.0f, (float) progressValue(player) / durationTicks)
+                : 0.0f;
     }
 
     @Override
     public int progressValue(@NotNull ServerPlayer player) {
-        long start = ObjectiveTracker.START_TIMES.getOrDefault(player.getUUID(), 0L);
-        if (start == 0L) {
-            return 0;
-        }
-        long elapsed = ObjectiveTracker.currentTick() - start;
-        return (int) Math.max(0, Math.min(elapsed, durationTicks));
+        var start = startTimes.get(player);
+        if (start == null) return 0;
+        return (int) (player.serverLevel().getGameTime() - start);
     }
 
     @Override
@@ -50,7 +63,7 @@ public record SurvivalObjective(
     }
 
     @Override
-    public ObjectiveType type() {
+    public @NotNull ObjectiveType type() {
         return ObjectiveType.SURVIVE;
     }
 }

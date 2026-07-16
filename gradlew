@@ -137,7 +137,7 @@ else
     then
         die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
 
-Please set your JAVA_HOME variable in your environment to match the
+Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
     fi
 fi
@@ -202,7 +202,7 @@ fi
 
 
 # Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
-DEFAULT_JVM_OPTS='-Dfile.encoding=UTF-8 "-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
 
 # Collect all arguments for the java command:
 #   * DEFAULT_JVM_OPTS, JAVA_OPTS, JAVA_OPTS, and optsEnvironmentVar are not allowed to contain shell fragments,

@@ -1,64 +1,51 @@
 package com.bikininjas.corelib.network;
 
-import net.minecraft.network.FriendlyByteBuf;
+import com.bikininjas.corelib.stats.PlayerStats;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-
-import java.util.HashSet;
-import java.util.Set;
+import org.jetbrains.annotations.NotNull;
 
 /**
- * Server-to-client payload that syncs a player's current stats and HUD prefs.
- * <p>
- * Sent periodically by {@code PlayerStatsManager} for every online player
- * who has the overlay enabled.
- *
- * @param visible       whether the stats overlay should be displayed
- * @param fields        the stat field names to show (e.g. {@code ["deaths", "kills"]})
- * @param deaths        current death count
- * @param kills         current kill count
- * @param blocksBroken  current block-break count
- * @param crafts        current craft count
+ * Payload for syncing player stats from server to client for HUD display.
+ * Also carries overlay display preferences (enabled state, visible fields bitmask).
  */
 public record StatsSyncPayload(
-        boolean visible,
-        Set<String> fields,
         int deaths,
         int kills,
         int blocksBroken,
-        int crafts
+        int crafts,
+        boolean overlayEnabled,
+        int visibleFields
 ) implements CustomPacketPayload {
 
-    public static final CustomPacketPayload.Type<StatsSyncPayload> TYPE =
-            new CustomPacketPayload.Type<>(
-                    ResourceLocation.parse("core_lib:stats_sync"));
+    public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("core_lib", "stats_sync");
+    public static final Type<StatsSyncPayload> TYPE = new Type<>(ID);
 
-    public static final StreamCodec<FriendlyByteBuf, StatsSyncPayload> STREAM_CODEC =
+    public static final StreamCodec<RegistryFriendlyByteBuf, StatsSyncPayload> STREAM_CODEC =
             StreamCodec.ofMember(StatsSyncPayload::write, StatsSyncPayload::new);
 
-    public StatsSyncPayload(FriendlyByteBuf buf) {
-        this(
-                buf.readBoolean(),
-                buf.readCollection(HashSet::new, FriendlyByteBuf::readUtf),
-                buf.readInt(),
-                buf.readInt(),
-                buf.readInt(),
-                buf.readInt()
-        );
+    public StatsSyncPayload(@NotNull PlayerStats stats, boolean overlayEnabled, int visibleFields) {
+        this(stats.deaths(), stats.kills(), stats.blocksBroken(), stats.crafts(), overlayEnabled, visibleFields);
     }
 
-    private void write(FriendlyByteBuf buf) {
-        buf.writeBoolean(visible);
-        buf.writeCollection(fields, FriendlyByteBuf::writeUtf);
+    private StatsSyncPayload(@NotNull RegistryFriendlyByteBuf buf) {
+        this(buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
+                buf.readBoolean(), buf.readInt());
+    }
+
+    private void write(@NotNull RegistryFriendlyByteBuf buf) {
         buf.writeInt(deaths);
         buf.writeInt(kills);
         buf.writeInt(blocksBroken);
         buf.writeInt(crafts);
+        buf.writeBoolean(overlayEnabled);
+        buf.writeInt(visibleFields);
     }
 
     @Override
-    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+    public @NotNull Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 }

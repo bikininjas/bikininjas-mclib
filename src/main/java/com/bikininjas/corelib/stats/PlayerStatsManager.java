@@ -1,216 +1,140 @@
 package com.bikininjas.corelib.stats;
 
-import com.bikininjas.corelib.network.StatsSyncPayload;
+import com.bikininjas.corelib.network.NetworkHandler;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Event-driven, per-player statistics manager.
+ * Tracks player statistics automatically: deaths, kills, blocks broken, and crafts.
  * <p>
- * This is a stateless utility: there is no singleton. All state lives in a single
- * {@link ConcurrentHashMap} keyed by player {@link UUID}. The manager is wired to
- * the NeoForge event bus through the nested {@link StatsHandler} class, registered
- * once via the static initialiser block.
- * <p>
- * Stats are accumulated atomically via {@link Map#compute(Object, java.util.function.BiFunction)}
- * so concurrent event delivery (e.g. a death and a craft on the same tick) cannot
- * race. Unknown players transparently start from {@link PlayerStats#EMPTY}.
+ * Thread-safe. All methods static. Registers event handlers on the NeoForge event bus.
  */
 public final class PlayerStatsManager {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(PlayerStatsManager.class);
-
-    /** Player UUID → accumulated stats. Concurrent for safe multi-thread access. */
-    private static final Map<UUID, PlayerStats> STATS = new ConcurrentHashMap<>();
-
-    /** Utility class — never instantiated. */
-    private PlayerStatsManager() {
-        // Static-only utility. No instances.
-    }
-
-    /**
-     * Force-load this class (triggers {@code static} block).
-     * Idempotent — safe to call multiple times.
-     */
-    public static void init() {
-        // static block does the work
-    }
+    private static final Map<UUID, PlayerStats> statsMap = new ConcurrentHashMap<>();
 
     static {
-        // Register the stats collector on the NeoForge event bus.
         NeoForge.EVENT_BUS.register(StatsHandler.class);
     }
 
-    // ──────────────────────────────────────────────
-    //  Queries
-    // ──────────────────────────────────────────────
-
-    /**
-     * Get the current accumulated stats for a player.
-     * <p>
-     * Players with no recorded activity return {@link PlayerStats#EMPTY} rather than
-     * {@code null}, so callers can read fields without a null check.
-     *
-     * @param player the target player (non-null)
-     * @return the player's stats, or {@link PlayerStats#EMPTY} if none recorded
-     * @throws NullPointerException if {@code player} is {@code null}
-     */
-    public static PlayerStats getStats(ServerPlayer player) {
-        Objects.requireNonNull(player, "player must not be null");
-        return STATS.getOrDefault(player.getUUID(), PlayerStats.EMPTY);
+    private PlayerStatsManager() {
     }
 
     /**
-     * Reset every statistic for a player back to zero.
-     * <p>
-     * The player's entry is removed entirely; the next read transparently falls back
-     * to {@link PlayerStats#EMPTY}.
-     *
-     * @param player the target player (non-null)
-     * @throws NullPointerException if {@code player} is {@code null}
+     * Get the full stats for a player.
      */
-    public static void resetStats(ServerPlayer player) {
+    public static @NotNull PlayerStats getStats(@NotNull ServerPlayer player) {
         Objects.requireNonNull(player, "player must not be null");
-        STATS.remove(player.getUUID());
-        LOGGER.debug("Reset stats for player {}", player.getUUID());
+        return statsMap.getOrDefault(player.getUUID(), PlayerStats.EMPTY);
     }
 
     /**
-     * @param player the target player (non-null)
-     * @return the number of times the player has died
-     * @throws NullPointerException if {@code player} is {@code null}
+     * Get stats by player UUID.
      */
-    public static int getDeaths(ServerPlayer player) {
+    public static @NotNull PlayerStats getStats(@NotNull UUID uuid) {
+        Objects.requireNonNull(uuid, "uuid must not be null");
+        return statsMap.getOrDefault(uuid, PlayerStats.EMPTY);
+    }
+
+    /**
+     * Get the death count for a player.
+     */
+    public static int getDeaths(@NotNull ServerPlayer player) {
         return getStats(player).deaths();
     }
 
     /**
-     * @param player the target player (non-null)
-     * @return the number of entities the player has killed
-     * @throws NullPointerException if {@code player} is {@code null}
+     * Get the kill count for a player.
      */
-    public static int getKills(ServerPlayer player) {
+    public static int getKills(@NotNull ServerPlayer player) {
         return getStats(player).kills();
     }
 
     /**
-     * @param player the target player (non-null)
-     * @return the number of blocks the player has broken
-     * @throws NullPointerException if {@code player} is {@code null}
+     * Get the blocks broken count for a player.
      */
-    public static int getBlocksBroken(ServerPlayer player) {
+    public static int getBlocksBroken(@NotNull ServerPlayer player) {
         return getStats(player).blocksBroken();
     }
 
     /**
-     * @param player the target player (non-null)
-     * @return the number of items the player has crafted
-     * @throws NullPointerException if {@code player} is {@code null}
+     * Get the craft count for a player.
      */
-    public static int getCrafts(ServerPlayer player) {
+    public static int getCrafts(@NotNull ServerPlayer player) {
         return getStats(player).crafts();
     }
 
-    // ──────────────────────────────────────────────
-    //  Event handler
-    // ──────────────────────────────────────────────
+    /**
+     * Reset all stats for a player to zero.
+     */
+    public static void resetStats(@NotNull ServerPlayer player) {
+        Objects.requireNonNull(player, "player must not be null");
+        statsMap.put(player.getUUID(), PlayerStats.EMPTY);
+    }
 
     /**
-     * Static event handler that collects per-player statistics. Registered once on
-     * the NeoForge event bus. All updates go through {@link #STATS} with atomic
-     * {@code compute} calls so concurrent events cannot corrupt the counters.
+     * Force class loading (called from CoreLib.initModules()).
      */
+    public static void init() {
+        // static initializer already ran; explicit call for module loading
+    }
+
+    // -- Internal mutation ---------------------------------------------------
+
+    private static PlayerStats mutate(ServerPlayer player, java.util.function.UnaryOperator<PlayerStats> mutator) {
+        var uuid = player.getUUID();
+        var current = statsMap.getOrDefault(uuid, PlayerStats.EMPTY);
+        var updated = mutator.apply(current);
+        statsMap.put(uuid, updated);
+        return updated;
+    }
+
+    // -- Event handler -------------------------------------------------------
+
     private static final class StatsHandler {
-
         private StatsHandler() {
-            // Static-only handler. No instances.
         }
 
         @SubscribeEvent
-        public static void onLivingDeath(LivingDeathEvent event) {
-            LivingEntity victim = event.getEntity();
-            UUID victimId = victim.getUUID();
-
-            // Victim died → increment their death count.
-            if (victim instanceof ServerPlayer) {
-                STATS.compute(victimId, (k, v) -> {
-                    PlayerStats cur = (v == null) ? PlayerStats.EMPTY : v;
-                    return new PlayerStats(cur.deaths() + 1, cur.kills(),
-                            cur.blocksBroken(), cur.crafts());
-                });
+        static void onPlayerLogin(@NotNull PlayerEvent.PlayerLoggedInEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                NetworkHandler.sendStatsSync(player);
             }
+        }
 
-            // Killer credited → increment their kill count.
+        @SubscribeEvent
+        static void onDeath(@NotNull LivingDeathEvent event) {
+            if (event.getEntity() instanceof ServerPlayer victim) {
+                mutate(victim, s -> new PlayerStats(s.deaths() + 1, s.kills(), s.blocksBroken(), s.crafts()));
+            }
             if (event.getSource().getEntity() instanceof ServerPlayer killer) {
-                STATS.compute(killer.getUUID(), (k, v) -> {
-                    PlayerStats cur = (v == null) ? PlayerStats.EMPTY : v;
-                    return new PlayerStats(cur.deaths(), cur.kills() + 1,
-                            cur.blocksBroken(), cur.crafts());
-                });
+                mutate(killer, s -> new PlayerStats(s.deaths(), s.kills() + 1, s.blocksBroken(), s.crafts()));
             }
         }
 
         @SubscribeEvent
-        public static void onBlockBreak(BlockEvent.BreakEvent event) {
-            Player player = event.getPlayer();
-            if (!(player instanceof ServerPlayer serverPlayer)) {
-                return;
+        static void onBlockBreak(@NotNull BlockEvent.BreakEvent event) {
+            if (event.getPlayer() instanceof ServerPlayer player) {
+                mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken() + 1, s.crafts()));
             }
-            BlockState broken = event.getState();
-            STATS.compute(serverPlayer.getUUID(), (k, v) -> {
-                PlayerStats cur = (v == null) ? PlayerStats.EMPTY : v;
-                return new PlayerStats(cur.deaths(), cur.kills(),
-                        cur.blocksBroken() + 1, cur.crafts());
-            });
-            LOGGER.debug("Player {} broke block {}", serverPlayer.getUUID(), broken.getBlock());
         }
 
         @SubscribeEvent
-        public static void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
-            if (!(event.getEntity() instanceof ServerPlayer serverPlayer)) {
-                return;
-            }
-            STATS.compute(serverPlayer.getUUID(), (k, v) -> {
-                PlayerStats cur = (v == null) ? PlayerStats.EMPTY : v;
-                return new PlayerStats(cur.deaths(), cur.kills(),
-                        cur.blocksBroken(), cur.crafts() + 1);
-            });
-            LOGGER.debug("Player {} crafted {}", serverPlayer.getUUID(), event.getCrafting().getDisplayName());
-        }
-
-        @SubscribeEvent
-        public static void onServerTick(ServerTickEvent.Post event) {
-            var server = event.getServer();
-            long tick = server.getTickCount();
-            if (tick % 20 != 0) {
-                return; // sync once per second
-            }
-            for (var player : server.getPlayerList().getPlayers()) {
-                if (!StatsDisplayPrefs.isEnabled(player)) {
-                    continue;
-                }
-                Set<String> fields = StatsDisplayPrefs.getVisibleFields(player);
-                PlayerStats s = getStats(player);
-                var payload = new StatsSyncPayload(true, fields,
-                        s.deaths(), s.kills(), s.blocksBroken(), s.crafts());
-                PacketDistributor.sendToPlayer(player, payload);
+        static void onCraft(@NotNull PlayerEvent.ItemCraftedEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken(), s.crafts() + 1));
             }
         }
     }

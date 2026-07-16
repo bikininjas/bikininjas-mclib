@@ -2,41 +2,71 @@ package com.bikininjas.corelib.objective;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 /**
- * Objective requiring the player to collect a number of items of a given type.
- * <p>
- * The live collected count is read from {@link ObjectiveTracker#COUNTS} keyed by
- * the player's UUID and this objective's {@link #description()}. The count is
- * incremented by the pickup event handler in {@link ObjectiveTracker}.
+ * Objective: collect a certain number of a specific item.
  */
 public record CollectObjective(
         @NotNull String description,
-        @NotNull Item item,
+        @NotNull Item targetItem,
         int target
 ) implements Objective {
 
+    private static final ConcurrentMap<String, ConcurrentMap<ServerPlayer, Integer>> collectCounts = new ConcurrentHashMap<>();
+
+    static {
+        NeoForge.EVENT_BUS.register(CollectHandler.class);
+    }
+
+    public CollectObjective {
+        Objects.requireNonNull(description, "description must not be null");
+        Objects.requireNonNull(targetItem, "targetItem must not be null");
+    }
+
     @Override
     public boolean isComplete(@NotNull ServerPlayer player) {
-        return progress(player) >= 1.0f;
+        return progressValue(player) >= target;
     }
 
     @Override
     public float progress(@NotNull ServerPlayer player) {
-        return (float) progressValue(player) / (float) target;
+        return target > 0 ? Math.min(1.0f, (float) progressValue(player) / target) : 0.0f;
     }
 
     @Override
     public int progressValue(@NotNull ServerPlayer player) {
-        Integer count = ObjectiveTracker.COUNTS
-                .getOrDefault(player.getUUID(), java.util.Map.of())
-                .get(description);
-        return Math.min(count == null ? 0 : count, target);
+        return collectCounts
+                .getOrDefault(description, new ConcurrentHashMap<>())
+                .getOrDefault(player, 0);
     }
 
     @Override
-    public ObjectiveType type() {
+    public @NotNull ObjectiveType type() {
         return ObjectiveType.COLLECT;
+    }
+
+    // -- Handler -------------------------------------------------------------
+
+    private static final class CollectHandler {
+        private CollectHandler() {
+        }
+
+        @SubscribeEvent
+        static void onPickup(@NotNull ItemEntityPickupEvent.Post event) {
+            var player = event.getPlayer();
+            if (!(player instanceof ServerPlayer serverPlayer)) return;
+            var item = event.getItemEntity().getItem();
+
+            collectCounts.computeIfAbsent(item.getItem().toString(), k -> new ConcurrentHashMap<>())
+                    .merge(serverPlayer, item.getCount(), Integer::sum);
+        }
     }
 }

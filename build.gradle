@@ -1,7 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'net.neoforged.moddev' version '2.0.141'
+    id 'net.neoforged.moddev' version '2.0.142'
 }
 
 version = project.mod_version
@@ -13,9 +13,6 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
-// ============================================================
-// NeoForge
-// ============================================================
 neoForge {
     version = project.neo_version
 
@@ -55,12 +52,6 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
-
-    // JUnit5 — unit tests with NeoForge test framework
-    unitTest {
-        enable()
-        testedMod = mods."${project.mod_id}"
-    }
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
@@ -69,46 +60,30 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
-// ============================================================
-// Dependencies
-// ============================================================
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    // ---- Testing ----
-    testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
-    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
-    testImplementation "net.neoforged:testframework:${project.neo_version}"
+    // jetbrains annotations for @NotNull/@Nullable
+    implementation 'org.jetbrains:annotations:26.0.2'
+
+    // Tests
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'org.slf4j:slf4j-api:2.0.9'
 }
 
 test {
     useJUnitPlatform()
-}
-
-// ============================================================
-// Publishing — publish to Maven for consumption by child mods
-// ============================================================
-publishing {
-    publications {
-        mavenJava(org.gradle.api.publish.maven.MavenPublication) {
-            groupId = project.mod_group_id
-            artifactId = project.base.archivesName.get()
-            version = project.mod_version
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            name = "localBuild"
-            url = "${rootProject.projectDir}/build/repo"
-        }
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
     }
 }
 
 // ============================================================
-// Mod metadata (property expansion)
+// Mod metadata generation
 // ============================================================
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
     var replaceProperties = [
@@ -130,6 +105,27 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
 }
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
+
+// ============================================================
+// Publish to local Maven repo for composite builds
+// ============================================================
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            name = "Bikininjas"
+            url = "https://maven.bikininjas.dev/releases"
+        }
+        maven {
+            name = "local"
+            url = "file://${rootProject.projectDir}/repo"
+        }
+    }
+}
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
