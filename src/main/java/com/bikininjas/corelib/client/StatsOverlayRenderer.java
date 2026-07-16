@@ -1,12 +1,9 @@
 package com.bikininjas.corelib.client;
 
-import com.bikininjas.corelib.CoreLib;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 
 /**
@@ -16,8 +13,10 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
  * The overlay is drawn during {@link RenderGuiEvent.Post} and respects
  * the visibility and field-preference flags synced from the server.
  * Auto-sizing: the panel width expands to fit the longest stat line.
+ * <p>
+ * Registered on the NeoForge event bus from {@code CoreLib} via
+ * {@code FMLClientSetupEvent}.
  */
-@EventBusSubscriber(value = Dist.CLIENT, modid = CoreLib.MODID)
 public final class StatsOverlayRenderer {
 
     private static final int BG_COLOR         = 0x88000000; // semi-transparent black

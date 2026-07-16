@@ -5,6 +5,7 @@ import com.bikininjas.corelib.entity.SpawnHelper;
 import com.bikininjas.corelib.enchantment.EnchantmentUtils;
 import com.bikininjas.corelib.kit.KitManager;
 import com.bikininjas.corelib.message.MessageHelper;
+import com.bikininjas.corelib.network.NetworkHandler;
 import com.bikininjas.corelib.objective.ObjectiveTracker;
 import com.bikininjas.corelib.player.PlayerStateManager;
 import com.bikininjas.corelib.randomevent.RandomEventManager;
@@ -13,6 +14,8 @@ import com.bikininjas.corelib.stats.PlayerStatsManager;
 import com.bikininjas.corelib.time.TimeManager;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.common.NeoForge;
 
 @Mod(CoreLib.MODID)
 public final class CoreLib {
@@ -20,38 +23,25 @@ public final class CoreLib {
     public static final String MODID = "core_lib";
 
     public CoreLib(IEventBus modBus) {
-        // Register deferred registers
         Registers.ITEMS.register(modBus);
         Registers.BLOCKS.register(modBus);
         Registers.BLOCK_ENTITY_TYPES.register(modBus);
         Registers.ENTITY_TYPES.register(modBus);
 
-        // Initialize core modules
         initModules();
+        NetworkHandler.register(modBus);
+
+        modBus.addListener(FMLClientSetupEvent.class, event ->
+                NeoForge.EVENT_BUS.register(
+                        com.bikininjas.corelib.client.StatsOverlayRenderer.class));
     }
 
-    /**
-     * Force-load all module classes to trigger their static initializers
-     * (event bus subscriptions) and singleton initialization.
-     * <p>
-     * {@link TimeManager} registers a tick handler via its static block.
-     * {@link ObjectiveTracker} registers its event handler via its static block.
-     * {@link RandomEventManager#getInstance()} creates the singleton event engine.
-     * {@link CommandRegister#init()} registers the {@code /challenge} and
-     * {@code /stats} command trees.
-     * {@link PlayerStatsManager} registers its stat-counter handlers.
-     * {@link PlayerStateManager}, {@link KitManager}, {@link MessageHelper},
-     * {@link SpawnHelper} and {@link EnchantmentUtils} are stateless utilities
-     * that need no initialization.
-     */
     private static void initModules() {
-        // Force class loads → triggers static event-bus registration
         TimeManager.computeExtraTicks(1.0f, 1.0f);
         ObjectiveTracker.currentTick();
         CommandRegister.init();
         PlayerStatsManager.init();
 
-        // Initialize the random event manager singleton (self-registers on event bus)
         RandomEventManager.getInstance();
     }
 }

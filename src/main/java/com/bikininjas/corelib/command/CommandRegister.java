@@ -37,6 +37,7 @@ public final class CommandRegister {
         static void onRegisterCommands(RegisterCommandsEvent event) {
             ChallengeCommand.register(event.getDispatcher());
             StatsCommand.register(event.getDispatcher());
+            KitCommand.register(event.getDispatcher());
         }
     }
 }

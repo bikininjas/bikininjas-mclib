@@ -1,5 +1,8 @@
 package com.bikininjas.corelib.objective;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -10,12 +13,14 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -89,6 +94,7 @@ public final class ObjectiveTracker {
         START_TIMES.put(id, currentTick);
         ACTIVE_CHALLENGE_NAMES.put(id, challenge.name());
         LOGGER.debug("Started challenge '{}' for {}", challenge.name(), id);
+        saveToPlayer(player);
     }
 
     /**
@@ -104,6 +110,7 @@ public final class ObjectiveTracker {
         START_TIMES.remove(id);
         ACTIVE_CHALLENGE_NAMES.remove(id);
         LOGGER.debug("Stopped challenge tracking for {}", id);
+        saveToPlayer(player);
     }
 
     /**
@@ -193,6 +200,95 @@ public final class ObjectiveTracker {
                 .merge(description, 1, Integer::sum);
     }
 
+    // ──────────────────────────────────────────────
+    //  NBT persistence
+    // ──────────────────────────────────────────────
+
+    private static final String TAG_ACTIVE_CHALLENGE = "obi_active_challenge";
+    private static final String TAG_START_TICK       = "obi_start_tick";
+    private static final String TAG_ELAPSED_SECONDS  = "obi_elapsed_seconds";
+    private static final String TAG_COUNTS           = "obi_counts";
+
+    /**
+     * Save active challenge state to the player's persistent data.
+     * Called automatically on challenge start/stop and on player logout.
+     *
+     * @param player the player whose data to save; never {@code null}.
+     */
+    public static void saveToPlayer(@NotNull ServerPlayer player) {
+        UUID id = player.getUUID();
+        CompoundTag data = player.getPersistentData();
+
+        String challenge = ACTIVE_CHALLENGE_NAMES.get(id);
+        if (challenge != null) {
+            data.putString(TAG_ACTIVE_CHALLENGE, challenge);
+            long startTick = START_TIMES.getOrDefault(id, 0L);
+            long elapsedSec = startTick > 0 ? (currentTick - startTick) / 20L : 0L;
+            data.putLong(TAG_START_TICK, startTick);
+            data.putLong(TAG_ELAPSED_SECONDS, elapsedSec);
+        } else {
+            data.remove(TAG_ACTIVE_CHALLENGE);
+            data.remove(TAG_START_TICK);
+            data.remove(TAG_ELAPSED_SECONDS);
+        }
+
+        // Save objective counts
+        Map<String, Integer> playerCounts = COUNTS.get(id);
+        if (playerCounts != null && !playerCounts.isEmpty()) {
+            CompoundTag countsTag = new CompoundTag();
+            for (var entry : playerCounts.entrySet()) {
+                countsTag.putInt(entry.getKey(), entry.getValue());
+            }
+            data.put(TAG_COUNTS, countsTag);
+        } else {
+            data.remove(TAG_COUNTS);
+        }
+    }
+
+    /**
+     * Load active challenge state from the player's persistent data.
+     * Called automatically on player login.
+     *
+     * @param player the player whose data to load; never {@code null}.
+     */
+    public static void loadFromPlayer(@NotNull ServerPlayer player) {
+        CompoundTag data = player.getPersistentData();
+        UUID id = player.getUUID();
+
+        // Restore challenge only if the definition still exists
+        if (data.contains(TAG_ACTIVE_CHALLENGE)) {
+            String challengeName = data.getString(TAG_ACTIVE_CHALLENGE);
+            ChallengeDefinition def = ChallengeRegistry.get(challengeName);
+            if (def != null && ChallengeRegistry.areModsLoaded(def)) {
+                long startTick = data.getLong(TAG_START_TICK);
+                long elapsedSec = data.getLong(TAG_ELAPSED_SECONDS);
+                // Adjust start tick so elapsed time is preserved after restart
+                long correctedStart = currentTick - (elapsedSec * 20L);
+                if (correctedStart < 0) correctedStart = 0;
+
+                ACTIVE_CHALLENGE_NAMES.put(id, challengeName);
+                START_TIMES.put(id, correctedStart);
+                objectives.put(id, new ArrayList<>(def.objectives()));
+                LOGGER.debug("Restored challenge '{}' for {} (elapsed: {}s)", challengeName, id, elapsedSec);
+            } else {
+                data.remove(TAG_ACTIVE_CHALLENGE);
+                data.remove(TAG_START_TICK);
+                data.remove(TAG_ELAPSED_SECONDS);
+                LOGGER.debug("Challenge '{}' no longer available, cleared for {}", challengeName, id);
+            }
+        }
+
+        // Restore objective counts
+        if (data.contains(TAG_COUNTS)) {
+            CompoundTag countsTag = data.getCompound(TAG_COUNTS);
+            Map<String, Integer> playerCounts = new ConcurrentHashMap<>();
+            for (String key : countsTag.getAllKeys()) {
+                playerCounts.put(key, countsTag.getInt(key));
+            }
+            COUNTS.put(id, playerCounts);
+        }
+    }
+
     /**
      * Static event handler registered on the NeoForge event bus. All handlers are
      * static so no instance is required.
@@ -201,6 +297,20 @@ public final class ObjectiveTracker {
 
         private ObjectiveHandler() {
             // Static handler container.
+        }
+
+        @SubscribeEvent
+        static void onPlayerLogin(@NotNull PlayerEvent.PlayerLoggedInEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                loadFromPlayer(player);
+            }
+        }
+
+        @SubscribeEvent
+        static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                saveToPlayer(player);
+            }
         }
 
         @SubscribeEvent
