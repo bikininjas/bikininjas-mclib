@@ -1,128 +1,187 @@
-# Idées de fonctionnalités pour core-lib
+# Core Lib — Documentation de la Librairie
 
-Thème : mods fun "défis Minecraft" ou "finir Minecraft".
+## Rôle
 
----
-
-## 🔧 Utilitaires haute priorité
-
-### 1. PlayerStateManager
-Snapshots d'état joueur pour checkpoints/rollback dans les défis.
-
-- `PlayerState` : inventaire, armure, XP, santé, faim, effets de potions
-- `save(player)` → retourne un snapshot
-- `load(player, state)` → restaure intégralement
-- `clear(player)` → reset complet
-
-*Utile pour :* début de défi (sauvegarder l'équipement), permadeath, "retour au spawn les mains vides".
-
-### 2. KitManager
-Système de kits/gabarits d'équipement.
-
-- `Kit` : liste d'items (ItemStack avec NBT), effets de potions, XP
-- `KitManager.register("nom", kit)`
-- `KitManager.give(player, "nom")` → donne le kit, drop l'inventaire existant ou merge
-- Chargement depuis JSON data-driven
-
-*Utile pour :* donner un équipement de départ, récompenses de palier, kits de classe.
-
-### 3. ObjectiveTracker
-Suivi d'objectifs pour progression dans un défi.
-
-- Objectifs : kill X mobs, collect Y items, atteindre Z position, stay alive T ticks
-- `ObjectiveTracker.startChallenge(player, objectives)`
-- Événements : `onPlayerKill`, `onItemPickup`, `onPlayerMove`
-- Callback de complétion (déclenche récompense, portail, etc.)
-- Timer intégré (speedrun)
-
-*Utile pour :* défis "tuer le wither en moins de 10min", "craft un beacon", bingo.
-
-### 4. ZoneManager
-Régions avec callbacks d'entrée/sortie/tick.
-
-- `Zone.cuboid(start, end)`, `Zone.sphere(center, radius)`, `Zone.union(zones...)`
-- `ZoneManager.register(zone, events)` : `onEnter(player)`, `onExit(player)`, `onTick(player)`
-- Empilable et priorisé (une zone peut contenir des sous-zones)
-
-*Utile pour :* arènes de boss, zones de danger, no-PvP, déclencheurs d'événements à l'entrée.
+API générique réutilisable par tous les mods enfants (`mod-*`). Ne contient
+**aucune feature concrète** : seulement des utilitaires, helpers, et managers
+que les mods consomment via `api` dependency.
 
 ---
 
-## 🎮 Mécaniques de jeu
+## Modules
 
-### 5. GameRuleManager
-Modifier les règles du jeu à la volée via API.
+### 1. Logging — `com.bikininjas.corelib.log`
 
-- Wrapper autour des gamerules Minecraft : `set(DO_DAYLIGHT_CYCLE, false)`, `toggle(KEEP_INVENTORY)`
-- Sauvegarde/restauration de l'état des gamerules
-- Règles customs (register new gamerule via DeferredRegister)
+Système de logs structuré prefixé par mod + classe.
 
-*Utile pour :* challenges "hardcore sans keepInventory", "nuit permanente", "pas de regen naturelle".
+- **`ModLogger`** : wrapper SLF4J. Auto-prefixe `[modId][ClassName]`.
+  Fournit `info()`, `debug()`, `warn()`, `error()` + `ErrorBuilder` chaînable.
+- **`ErrorBuilder`** : `.ctx(key, val)`, `.cause(exception)`, `.mod(overrideId)`.
+  Appel terminal `.report()` pour emission formatée.
+- **`LogManager`** : fabrique de `ModLogger`. Usage :
+  ```java
+  private static final ModLogger LOG = LogManager.getLogger("my_mod", MyClass.class);
+  LOG.error("Failed to load")
+      .ctx("file", path)
+      .cause(e)
+      .report();
+  ```
+- **NOOP sentinel** : si le niveau error est désactivé, `error()` retourne un
+  `ErrorBuilder.NOOP` dont toutes les méthodes sont des no-op (pas de formatage).
 
-### 6. DifficultyScaler
-Ajustement dynamique de la difficulté.
+### 2. Compteurs & Objectifs — `com.bikininjas.corelib.objective`
 
-- Modificateurs par type de mob : `scale(EntityType.ZOMBIE, 2.0f)` → 2× HP/dégâts
-- Facteurs : temps écoulé, nombre de joueurs, kills total
-- `getScaledDamage(entity, baseDamage)`, `getScaledHealth(entity, baseHealth)`
-- Chargement depuis JSON data maps
+- **`ObjectiveTracker`** : singleton thread-safe avec `ConcurrentHashMap`.
+  API : `get(player, key)`, `set(player, key, count)`, `add(player, key, delta)`,
+  `resetAll(player)`, `getAll(player)` → `Map<String, Integer>`.
 
-*Utile pour :* difficulté progressive, scaling multijoueur, mode "chaos".
+### 3. Gestionnaire d'Événements Aléatoires — `com.bikininjas.corelib.randomevent`
 
-### 7. DamageManager
-Interception et modification des dégâts.
+- **`RandomEventManager`** : singleton. Planifie et exécute des événements
+  aléatoires côté serveur avec intervalle configurable et sélection pondérée.
+- **`RandomEvent`** : interface fonctionnelle `execute(ServerLevel, Vec3)`.
+- API : `register(RandomEvent)`, `register(event, name)`, `remove(name)`,
+  `fireRandomEvent(level)`, `fireEvent(name, level, origin)`.
 
-- `registerHandler(predicate, handler)` : `onDamage(event)` → modifie, annule, redirige
-- Boucliers temporaires, reflet de dégâts, dégâts élémentaires, dégâts en % de vie max
-- Utilitaire de calcul : `multiplyDamage(event, factor)`, `negateDamage(event)`
+### 4. Temps / Scheduler — `com.bikininjas.corelib.time`
 
-*Utile pour :* boss avec phases d'invulnérabilité, mobs immunisés à certains dégâts.
+- **`TimeManager`** : gestion de temps Minecraft (cycle jour/nuit, ticks).
+  Fournit des utilitaires pour les mods qui ont besoin de timing.
+
+### 5. Spawn — `com.bikininjas.corelib.spawn`
+
+- **`SpawnHelper`** : utilitaires pour le spawn d'entités (positionnement,
+  conditions, validations).
+
+### 6. Commandes — `com.bikininjas.corelib.command`
+
+- **`CommandRegister`** : enregistrement centralisé des commandes.
+  Kit command (`/kit`), etc.
+
+### 7. Joueurs / Stats — `com.bikininjas.corelib.stats`
+
+- **`PlayerStatsManager`** : suivi de statistiques joueur (K/D, etc.)
+
+### 8. Kits — `com.bikininjas.corelib.kit`
+
+- **`KitManager`** : gestion de kits (ensembles d'items donnés au joueur).
+
+### 9. Restrictions — `com.bikininjas.corelib.restriction`
+
+- **`RestrictionManager`** : empêche certaines actions (vol, casse de bloc,
+  interaction) dans des zones ou conditions définies.
+
+### 10. Monde / Utilitaires — `com.bikininjas.corelib.world`
+
+- **`WorldUtils`** : helpers pour le monde Minecraft (téléportation, zones, etc.)
+
+### 11. Recettes — `com.bikininjas.corelib.recipe`
+
+- **`RecipeAPI`** : API pour ajouter des recettes programmatiquement via
+  reflection sur `RecipeManager` du serveur.
+- **`RecipeBuilder`** : builder fluide pour créer des recettes shapeless/shaped
+  avec sortie, entrées, id.
+
+### 12. Réseau — `com.bikininjas.corelib.network`
+
+- **`NetworkHandler`** : enregistrement des payloads réseau (CustomPacketPayload).
+  Utilise `StreamCodec.ofMember` helper.
+- Payloads : `StatsClientData` (sync stats client-side).
+
+### 13. Client — `com.bikininjas.corelib.client`
+
+- **`StatsOverlayRenderer`** : rendu overlay des stats en jeu (F3-like).
+- Code client isolé dans `com.bikininjas.corelib.client.*`.
+- Enregistré depuis `FMLClientSetupEvent`.
+
+### 14. Registres — `com.bikininjas.corelib.registry`
+
+- **`Registers`** : DeferredRegisters centralisés (ITEMS, BLOCKS, BLOCK_ENTITY_TYPES,
+  ENTITY_TYPES). Fournit des helpers :
+  - `simpleItem(name)`, `item(name, props)`, `item(name, factory)`
+  - `blockWithItem(name, blockFactory)` → `Registration<Block, Item>`
+  - `blockEntity(name, factory)`, `entity(name, builder)`
+- **Actuellement vide** : aucun item/block concret enregistré. Les mods enfants
+  utilisent leurs propres DeferredRegisters.
 
 ---
 
-## 📢 Communication & Interface
+## Structure du Code
 
-### 8. MessageHelper
-Notifications unifiées.
-
-- `title(player, title, subtitle, fadeIn, stay, fadeOut)`
-- `actionBar(player, message)`
-- `broadcastAll(messages...)` avec différents canaux
-- Builder de composants JSON : `text("rouge").red().bold()`, hover, click
-- Compteurs et timers affichés dans l'action bar
-
-*Utile pour :* annonces de début/fin de défi, warning de zone dangereuse, timer de speedrun.
+```
+core-lib/
+├── FEATURES.md
+├── build.gradle
+├── settings.gradle
+├── gradle.properties
+├── src/
+│   ├── main/java/com/bikininjas/corelib/
+│   │   ├── CoreLib.java                  @Mod class, initModules()
+│   │   ├── client/
+│   │   │   └── StatsOverlayRenderer.java
+│   │   ├── command/
+│   │   │   └── CommandRegister.java
+│   │   ├── kit/
+│   │   │   └── KitManager.java
+│   │   ├── log/
+│   │   │   ├── LogManager.java
+│   │   │   └── ModLogger.java
+│   │   ├── network/
+│   │   │   └── NetworkHandler.java
+│   │   ├── objective/
+│   │   │   └── ObjectiveTracker.java
+│   │   ├── randomevent/
+│   │   │   ├── RandomEvent.java
+│   │   │   └── RandomEventManager.java
+│   │   ├── recipe/
+│   │   │   ├── RecipeAPI.java
+│   │   │   └── RecipeBuilder.java
+│   │   ├── registry/
+│   │   │   └── Registers.java
+│   │   ├── restriction/
+│   │   │   └── RestrictionManager.java
+│   │   ├── spawn/
+│   │   │   └── SpawnHelper.java
+│   │   ├── stats/
+│   │   │   └── PlayerStatsManager.java
+│   │   ├── time/
+│   │   │   └── TimeManager.java
+│   │   └── world/
+│   │       └── WorldUtils.java
+│   └── test/java/com/bikininjas/corelib/unit/
+│       ├── ModLoggerTests.java
+│       ├── ObjectiveTrackerTests.java
+│       └── ...
+```
 
 ---
 
-## 🧩 Améliorations des modules existants
+## Patterns de Conception
 
-### 9. TimeManager — ajouter :
-- `getDayCount(level)` — nombre de jours Minecraft écoulés
-- `getElapsedTicks(level)` — ticks depuis le début de la partie
-- `scheduleEvent(level, ticks, Runnable)` — exécuter dans N ticks
-
-### 10. SpawnHelper — ajouter :
-- `spawnWithGear(...)` — spawner un mob avec équipement (armure, weapon, enchants)
-- `spawnPersistent(...)` — mob qui ne despawn pas
-- `spawnWave(level, center, List<EntityType>, int count, int interval)` — vagues
-
-### 11. RandomEventManager — ajouter :
-- Événements conditionnels (ne se déclenchent que si une condition est remplie)
-- Événements déclenchés manuellement par commande
-- Intégration avec ObjectiveTracker pour récompenses
+- **Modules statiques** : classes `final` + constructeur `private`.
+  `init()` pour forcer le chargement (appelé depuis `CoreLib.initModules()`).
+- **Event handlers** : static inner class `EventHandler` avec méthodes `static @SubscribeEvent`.
+- **Réseau** : `CustomPacketPayload` + `StreamCodec.ofMember`.
+- **Client** : package `client/`, enregistré via `FMLClientSetupEvent`.
+- **Thread-safe** : `ConcurrentHashMap`, `AtomicReference`.
+- **Logs** : `ModLogger` uniquement (pas de `LoggerFactory` direct).
 
 ---
 
-## 📦 Priorité suggérée
+## CI / CD
 
-| Priorité | Feature | Complexité | Réutilisabilité |
-|----------|---------|------------|-----------------|
-| P0 | PlayerStateManager | Faible | Très haute |
-| P0 | KitManager | Faible | Très haute |
-| P1 | ObjectiveTracker | Haute | Très haute |
-| P1 | MessageHelper | Faible | Très haute |
-| P2 | ZoneManager | Haute | Haute |
-| P2 | GameRuleManager | Faible | Haute |
-| P3 | DifficultyScaler | Moyenne | Moyenne |
-| P3 | DamageManager | Haute | Haute |
+- **CI** (`.github/workflows/ci.yml`) : build + test sur push et PR.
+- **CD** (`.github/workflows/cd.yml`) : semver auto-bump, GitHub Release avec JAR.
+  - `feat!: /BREAKING CHANGE` → MAJOR
+  - `feat:` → MINOR
+  - `fix: /perf:` → PATCH
+  - `chore: /docs: /style: /refactor: /test:` → skip
+
+---
+
+## Dépendances
+
+- Mods enfants déclarent `implementation "com.bikininjas.corelib:core_lib:${version}"`
+- Build local : `build-local.sh` publie core-lib dans `build/repo/` + mods le résolvent via `-Pcore_lib_repo`
+- CI : composite build (`includeBuild`) dans `settings.gradle` du mod
+- Version unique (pas de suffixe `-local`)
