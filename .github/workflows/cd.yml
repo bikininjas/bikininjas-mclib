@@ -75,12 +75,6 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         run: ./gradlew build -Pmod_version=${{ steps.version.outputs.version }}
 
-      - name: Rename JAR to naming convention
-        if: steps.version.outputs.skip != 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mv build/libs/core_lib-${VERSION}.jar build/libs/bikininjas-core_lib-${VERSION}.jar
-
       - name: Create GitHub Release
         if: steps.version.outputs.skip != 'true'
         env:
