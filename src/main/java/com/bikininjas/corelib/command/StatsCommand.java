@@ -6,6 +6,7 @@ import com.bikininjas.corelib.stats.PlayerStatsManager;
 import com.bikininjas.corelib.stats.StatsDisplayPrefs;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -45,10 +46,12 @@ public final class StatsCommand {
 
                     if (nowEnabled) {
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§aStats overlay enabled."), false);
+                                () -> Component.literal("Stats overlay enabled.")
+                                        .withStyle(ChatFormatting.GREEN), false);
                     } else {
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§7Stats overlay disabled."), false);
+                                () -> Component.literal("Stats overlay disabled.")
+                                        .withStyle(ChatFormatting.GRAY), false);
                     }
                     return 1;
                 })
@@ -77,8 +80,10 @@ public final class StatsCommand {
                             StatsDisplayPrefs.toggle(player); // ensure enabled
                             syncNow(player);
 
-                            ctx.getSource().sendSuccess(() -> Component.literal(
-                                    "§aStats overlay updated: " + String.join(", ", StatsDisplayPrefs.getVisibleFields(player))), false);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Stats overlay updated: ")
+                                    .withStyle(ChatFormatting.GREEN)
+                                    .append(Component.literal(String.join(", ", StatsDisplayPrefs.getVisibleFields(player)))
+                                            .withStyle(ChatFormatting.WHITE)), false);
                             return 1;
                         })
                 )

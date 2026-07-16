@@ -1,8 +1,7 @@
 package com.bikininjas.corelib.objective;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -50,16 +49,16 @@ public final class ObjectiveTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectiveTracker.class);
 
     /** Player UUID → list of active objectives. */
-    public static final Map<UUID, List<Objective>> objectives = new ConcurrentHashMap<>();
+    static final Map<UUID, List<Objective>> objectives = new ConcurrentHashMap<>();
 
     /** Player UUID → (objective description → current count). */
-    public static final Map<UUID, Map<String, Integer>> COUNTS = new ConcurrentHashMap<>();
+    static final Map<UUID, Map<String, Integer>> COUNTS = new ConcurrentHashMap<>();
 
     /** Player UUID → server tick at which the challenge started. */
-    public static final Map<UUID, Long> START_TIMES = new ConcurrentHashMap<>();
+    static final Map<UUID, Long> START_TIMES = new ConcurrentHashMap<>();
 
     /** Player UUID → name of the active challenge. */
-    public static final Map<UUID, String> ACTIVE_CHALLENGE_NAMES = new ConcurrentHashMap<>();
+    static final Map<UUID, String> ACTIVE_CHALLENGE_NAMES = new ConcurrentHashMap<>();
 
     /** Tick counter advanced by the server tick handler. */
     private static volatile long currentTick = 0L;
@@ -81,7 +80,7 @@ public final class ObjectiveTracker {
     /**
      * @return the current server tick counter (monotonic, advanced each tick).
      */
-    public static long currentTick() {
+    static long currentTick() {
         return currentTick;
     }
 
@@ -379,8 +378,11 @@ public final class ObjectiveTracker {
                     String name = ACTIVE_CHALLENGE_NAMES.getOrDefault(playerId, "?");
                     stopChallenge(player);
                     player.displayClientMessage(
-                            Component.literal("§a✔ Challenge '").append(name)
-                                    .append(Component.literal("' completed!")), false);
+                            Component.literal("✔ Challenge '")
+                                    .withStyle(ChatFormatting.GREEN)
+                                    .append(Component.literal(name).withStyle(ChatFormatting.WHITE))
+                                    .append(Component.literal("' completed!").withStyle(ChatFormatting.GREEN)),
+                            false);
                     continue;
                 }
 
@@ -393,9 +395,14 @@ public final class ObjectiveTracker {
                     int pct = Math.round(prog * 100.0f);
                     String cname = ACTIVE_CHALLENGE_NAMES.getOrDefault(playerId, "?");
 
-                    player.displayClientMessage(Component.literal(
-                            String.format("§e⏱ §f%s §7| §a%d%% §7| §e%d:%02d",
-                                    cname, pct, mins, secs)), true);
+                    player.displayClientMessage(
+                            Component.literal("⏱ ").withStyle(ChatFormatting.YELLOW)
+                                    .append(Component.literal(cname).withStyle(ChatFormatting.WHITE))
+                                    .append(Component.literal(" | ").withStyle(ChatFormatting.GRAY))
+                                    .append(Component.literal(pct + "%").withStyle(ChatFormatting.GREEN))
+                                    .append(Component.literal(" | ").withStyle(ChatFormatting.GRAY))
+                                    .append(Component.literal(String.format("%d:%02d", mins, secs)).withStyle(ChatFormatting.YELLOW)),
+                            true);
                 }
             }
         }

@@ -1,6 +1,5 @@
 package com.bikininjas.corelib.objective;
 
-import com.google.common.base.Objects;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import org.jetbrains.annotations.NotNull;

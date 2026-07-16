@@ -3,35 +3,42 @@ package com.bikininjas.corelib.client;
 import com.bikininjas.corelib.network.StatsSyncPayload;
 
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Client-side singleton cache of the latest synced stats.
  * <p>
  * Updated by {@link StatsSyncPayload} via the network handler.
- * All fields are {@code volatile} so the render thread always
- * sees the latest value written by the Netty thread.
+ * The entire state is swapped atomically via an {@link AtomicReference},
+ * so the render thread always sees a consistent snapshot written
+ * by the Netty thread (no partial-update race).
  */
 public final class StatsClientData {
 
-    private static volatile boolean visible = false;
-    private static volatile Set<String> visibleFields = Set.of();
-    private static volatile int deaths = 0;
-    private static volatile int kills = 0;
-    private static volatile int blocksBroken = 0;
-    private static volatile int crafts = 0;
+    private static final AtomicReference<State> STATE =
+            new AtomicReference<>(new State(false, Set.of(), 0, 0, 0, 0));
 
     private StatsClientData() {}
+
+    private record State(
+            boolean visible,
+            Set<String> visibleFields,
+            int deaths, int kills,
+            int blocksBroken, int crafts
+    ) {}
 
     /**
      * Atomically replace all cached state with the values from a payload.
      */
     public static void update(StatsSyncPayload payload) {
-        visible = payload.visible();
-        visibleFields = payload.fields();
-        deaths = payload.deaths();
-        kills = payload.kills();
-        blocksBroken = payload.blocksBroken();
-        crafts = payload.crafts();
+        STATE.set(new State(
+                payload.visible(),
+                payload.fields(),
+                payload.deaths(),
+                payload.kills(),
+                payload.blocksBroken(),
+                payload.crafts()
+        ));
     }
 
     // ──────────────────────────────────────────────
@@ -39,26 +46,26 @@ public final class StatsClientData {
     // ──────────────────────────────────────────────
 
     public static boolean isVisible() {
-        return visible;
+        return STATE.get().visible();
     }
 
     public static Set<String> getVisibleFields() {
-        return visibleFields;
+        return STATE.get().visibleFields();
     }
 
     public static int getDeaths() {
-        return deaths;
+        return STATE.get().deaths();
     }
 
     public static int getKills() {
-        return kills;
+        return STATE.get().kills();
     }
 
     public static int getBlocksBroken() {
-        return blocksBroken;
+        return STATE.get().blocksBroken();
     }
 
     public static int getCrafts() {
-        return crafts;
+        return STATE.get().crafts();
     }
 }
