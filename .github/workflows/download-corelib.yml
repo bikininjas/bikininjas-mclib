@@ -5,16 +5,18 @@ name: Download core-lib
 # Usage from child mod CI:
 #   download-corelib:
 #     uses: bikininjas/BikininjasMCMods/.github/workflows/download-corelib.yml@master
+#     # version is optional — defaults to latest release if omitted
 #     with:
-#       version: '1.0.0'
+#       version: '1.0.0'   # or omit for auto-latest
 
 on:
   workflow_call:
     inputs:
       version:
-        required: true
+        required: false
         type: string
-        description: 'core-lib version (e.g. 1.0.0)'
+        default: 'latest'
+        description: 'core-lib version (e.g. 1.0.0). Omit or use "latest" for auto-resolve.'
       repo:
         required: false
         type: string
@@ -23,12 +25,26 @@ on:
 
 jobs:
   download:
-    name: Download core-lib v${{ inputs.version }}
+    name: Download core-lib
     runs-on: ubuntu-latest
     steps:
-      - name: Download JAR from GitHub Release (no auth)
+      - name: Resolve version
+        id: resolve
         run: |
+          VERSION="${{ inputs.version }}"
+          if [ "$VERSION" = "latest" ]; then
+            echo "🔍 Resolving latest core-lib release from ${{ inputs.repo }}..."
+            VERSION=$(curl -sSf \
+              "https://api.github.com/repos/${{ inputs.repo }}/releases/latest" \
+              | jq -r .tag_name | sed 's/^v//')
+            echo "✅ Resolved: v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download JAR from GitHub Release
+        run: |
+          VERSION="${{ steps.resolve.outputs.version }}"
           mkdir -p libs
-          URL="https://github.com/${{ inputs.repo }}/releases/download/v${{ inputs.version }}/core_lib-${{ inputs.version }}.jar"
-          curl -sSfL -o "libs/core_lib-${{ inputs.version }}.jar" "$URL"
-          echo "✅ core-lib v${{ inputs.version }} downloaded ($(stat -c%s libs/core_lib-${{ inputs.version }}.jar 2>/dev/null || wc -c < libs/core_lib-${{ inputs.version }}.jar) bytes)"
+          URL="https://github.com/${{ inputs.repo }}/releases/download/v${VERSION}/core_lib-${VERSION}.jar"
+          curl -sSfL -o "libs/core_lib-${VERSION}.jar" "$URL"
+          echo "✅ core-lib v${VERSION} downloaded ($(stat -c%s "libs/core_lib-${VERSION}.jar" 2>/dev/null || wc -c < "libs/core_lib-${VERSION}.jar") bytes)"

@@ -379,14 +379,13 @@ dependencies {
 
 ### 3. CI/CD
 
-Dans le workflow CI de ton mod enfant :
+**Option A — workflow réutilisable (recommandé)** : `version` optionnel, auto `latest` par défaut.
 
 ```yaml
 jobs:
   download-corelib:
     uses: bikininjas/bikininjas-mclib/.github/workflows/download-corelib.yml@master
-    with:
-      version: '1.0.0'
+    # version est optionnel — si omis, résout automatiquement la dernière release
 
   build:
     needs: download-corelib
@@ -398,11 +397,35 @@ jobs:
           java-version: 21
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew build
+```
+
+**Option B — inline** : résoudre la dernière version via l'API GitHub.
+
+```yaml
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve core-lib version
+        id: corelib
+        run: |
+          VERSION=$(curl -sSf https://api.github.com/repos/bikininjas/bikininjas-mclib/releases/latest | jq -r .tag_name | sed 's/^v//')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Download core-lib JAR
         run: |
+          V="${{ steps.corelib.outputs.version }}"
           mkdir -p libs
-          curl -sSfL -o "libs/core_lib-1.0.0.jar" \
-            "https://github.com/bikininjas/bikininjas-mclib/releases/download/v1.0.0/core_lib-1.0.0.jar"
+          curl -sSfL -o "libs/core_lib-${V}.jar" \
+            "https://github.com/bikininjas/bikininjas-mclib/releases/download/v${V}/core_lib-${V}.jar"
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew build
 ```
 
