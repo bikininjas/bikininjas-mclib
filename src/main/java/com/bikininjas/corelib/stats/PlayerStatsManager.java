@@ -122,12 +122,15 @@ public final class PlayerStatsManager {
 
             if (victim != null && killer != null && victim.getUUID().equals(killer.getUUID())) {
                 mutate(victim, s -> new PlayerStats(s.deaths() + 1, s.kills() + 1, s.blocksBroken(), s.crafts()));
+                NetworkHandler.sendStatsSync(victim);
             } else {
                 if (victim != null) {
                     mutate(victim, s -> new PlayerStats(s.deaths() + 1, s.kills(), s.blocksBroken(), s.crafts()));
+                    NetworkHandler.sendStatsSync(victim);
                 }
                 if (killer != null) {
                     mutate(killer, s -> new PlayerStats(s.deaths(), s.kills() + 1, s.blocksBroken(), s.crafts()));
+                    NetworkHandler.sendStatsSync(killer);
                 }
             }
         }
@@ -136,6 +139,7 @@ public final class PlayerStatsManager {
         static void onBlockBreak(@NotNull BlockEvent.BreakEvent event) {
             if (event.getPlayer() instanceof ServerPlayer player) {
                 mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken() + 1, s.crafts()));
+                NetworkHandler.sendStatsSync(player);
             }
         }
 
@@ -143,6 +147,7 @@ public final class PlayerStatsManager {
         static void onCraft(@NotNull PlayerEvent.ItemCraftedEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken(), s.crafts() + 1));
+                NetworkHandler.sendStatsSync(player);
             }
         }
     }
