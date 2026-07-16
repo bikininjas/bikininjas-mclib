@@ -1,68 +1,64 @@
 package com.bikininjas.corelib.unit;
 
 import com.bikininjas.corelib.enchantment.EnchantmentUtils;
-import net.minecraft.core.Holder;
-import net.minecraft.core.Registry;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.Enchantments;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * JUnit5 unit tests for {@link EnchantmentUtils}.
+ * Pure JUnit5 unit tests for {@link EnchantmentUtils}.
  * <p>
- * Run with {@code ./gradlew test} (NeoForge {@code unitTest} block, which
- * bootstraps a Minecraft environment so registry-held objects are available).
+ * These test only the pure logic that doesn't require a live Minecraft server:
+ * structural guarantees (final class, private constructor), constant values,
+ * and the boundary checks in {@link EnchantmentUtils#canEnchantAtLevel}.
+ * <p>
+ * Tests that require a live {@code Enchantment} holder (applying enchantments
+ * to items, querying max level) are written as NeoForge {@code GameTest}s
+ * instead, because the enchantment registry is data-driven and only available
+ * inside a running game in Minecraft 1.21.1+.
  */
 class EnchantmentUtilsTests {
 
-    private static final Holder<Enchantment> SHARPNESS = RegistryAccess
-            .fromRegistryOfRegistries(BuiltInRegistries.REGISTRY)
-            .registryOrThrow(Registries.ENCHANTMENT)
-            .getHolderOrThrow(Enchantments.SHARPNESS);
+    @Test
+    void classIsFinal() {
+        assertTrue(Modifier.isFinal(EnchantmentUtils.class.getModifiers()),
+                "EnchantmentUtils must be a final utility class");
+    }
+
+    @Test
+    void constructorIsPrivate() throws Exception {
+        Constructor<EnchantmentUtils> ctor = EnchantmentUtils.class.getDeclaredConstructor();
+        assertTrue(Modifier.isPrivate(ctor.getModifiers()),
+                "EnchantmentUtils constructor must be private");
+        ctor.setAccessible(true);
+        assertNotNull(ctor.newInstance(),
+                "Private constructor should be invokable (no side effects)");
+    }
+
+    @Test
+    void maxLevelConstantIs100() {
+        assertEquals(100, EnchantmentUtils.MAX_LEVEL);
+    }
 
     @Test
     void canEnchantAtLevelRespectsCap() {
-        assertTrue(EnchantmentUtils.canEnchantAtLevel(SHARPNESS, 1));
-        assertTrue(EnchantmentUtils.canEnchantAtLevel(SHARPNESS, 100));
-        assertFalse(EnchantmentUtils.canEnchantAtLevel(SHARPNESS, 101));
-        assertFalse(EnchantmentUtils.canEnchantAtLevel(SHARPNESS, 1000));
+        // canEnchantAtLevel only checks level <= MAX_LEVEL — it doesn't
+        // dereference the Holder, so null is safe here.
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 1));
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 100));
+        assertFalse(EnchantmentUtils.canEnchantAtLevel(null, 101));
+        assertFalse(EnchantmentUtils.canEnchantAtLevel(null, 1000));
     }
 
     @Test
-    void getMaxLevelForToolTriplesVanillaCap() {
-        // Sharpness vanilla max level is 5 -> 5 * 3 = 15
-        int max = EnchantmentUtils.getMaxLevelForTool(SHARPNESS, new ItemStack(Items.DIAMOND_SWORD));
-        assertEquals(15, max);
-        assertTrue(max <= EnchantmentUtils.MAX_LEVEL);
-    }
-
-    @Test
-    void applyEnchantmentBypassesVanillaMax() {
-        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
-        EnchantmentUtils.applyEnchantment(sword, SHARPNESS, 50);
-        assertEquals(50, sword.getEnchantmentLevel(SHARPNESS));
-    }
-
-    @Test
-    void applyEnchantmentClampsToCap() {
-        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
-        EnchantmentUtils.applyEnchantment(sword, SHARPNESS, 500);
-        assertEquals(EnchantmentUtils.MAX_LEVEL, sword.getEnchantmentLevel(SHARPNESS));
-    }
-
-    @Test
-    void applyEnchantmentsAppliesAll() {
-        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
-        EnchantmentUtils.applyEnchantments(sword, Map.of(SHARPNESS, 20));
-        assertEquals(20, sword.getEnchantmentLevel(SHARPNESS));
+    void canEnchantAtLevelAcceptsBoundaryValues() {
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 0));   // below min
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 1));   // min
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 50));  // mid
+        assertTrue(EnchantmentUtils.canEnchantAtLevel(null, 100)); // max
+        assertFalse(EnchantmentUtils.canEnchantAtLevel(null, 101));// above max
     }
 }
