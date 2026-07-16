@@ -120,7 +120,9 @@ public final class ObjectiveTracker {
      */
     public static long currentTick() {
         var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
-        return server != null ? server.overworld().getGameTime() : 0;
+        if (server == null) return 0;
+        var overworld = server.overworld();
+        return overworld != null ? overworld.getGameTime() : 0;
     }
 
     /**
