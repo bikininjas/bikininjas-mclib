@@ -1,7 +1,6 @@
 package com.bikininjas.corelib.recipe;
 
 import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -10,6 +9,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -87,39 +87,13 @@ public final class RecipeAPI {
             return;
         }
 
-        var recipeMap = new java.util.LinkedHashMap<net.minecraft.resources.ResourceLocation, RecipeHolder<?>>();
-        var byKey = com.google.common.collect.MultimapBuilder.hashKeys().arrayListValues()
-                .<net.minecraft.world.item.crafting.RecipeType<?>, RecipeHolder<?>>build();
+        var allRecipes = new ArrayList<>(manager.getRecipes());
+        allRecipes.removeIf(holder -> pendingRemovals.contains(holder.id().toString()));
+        allRecipes.addAll(pendingAdditions.values());
 
-        for (var holder : manager.getRecipes()) {
-            var loc = holder.id();
-            if (!pendingRemovals.contains(loc.toString())) {
-                recipeMap.put(loc, holder);
-                byKey.put(holder.value().getType(), holder);
-            }
-        }
+        manager.replaceRecipes(allRecipes);
 
-        for (var entry : pendingAdditions.entrySet()) {
-            var loc = net.minecraft.resources.ResourceLocation.parse(entry.getKey());
-            var holder = entry.getValue();
-            recipeMap.put(loc, holder);
-            byKey.put(holder.value().getType(), holder);
-        }
-
-        try {
-            var managerClass = net.minecraft.world.item.crafting.RecipeManager.class;
-            var recipesField = managerClass.getDeclaredField("recipes");
-            recipesField.setAccessible(true);
-            recipesField.set(manager, recipeMap);
-
-            var byNameField = managerClass.getDeclaredField("byName");
-            byNameField.setAccessible(true);
-            byNameField.set(manager, recipeMap);
-        } catch (java.lang.ReflectiveOperationException e) {
-            com.bikininjas.corelib.log.LogManager.getLogger("core_lib", RecipeAPI.class)
-                    .error("Failed to apply pending recipes")
-                    .cause(e)
-                    .report();
-        }
+        pendingAdditions.clear();
+        pendingRemovals.clear();
     }
 }
