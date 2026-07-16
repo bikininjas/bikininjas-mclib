@@ -16,8 +16,7 @@ Bibliothèque NeoForge partagée pour tous les mods Minecraft Bikininjas. Compat
 ## Build
 
 ```bash
-./gradlew build test   # Build + 17 tests JUnit 5 (26 total avec GameTest inclusions)
-./gradlew runServer     # Lance serveur avec GameTests
+./gradlew build       # Build + 26 tests JUnit 5 + 40 GameTests (NeoForge Test Framework)
 ```
 
 ---
@@ -334,9 +333,11 @@ CommandRegister.register(dispatcher, buildContext, selection);  // /kit list, /k
 
 ```java
 // 40 tests in-game couvrant 100% des features testables
-// Exécution : ./gradlew runGameTestServer
-// Annotation : @GameTestHolder("core_lib")
-// Structure : data/core_lib/structure/empty3x3x3.snbt
+// Framework : NeoForge Test Framework (net.neoforged:testframework)
+// Annotation : @ForEachTest(groups="core_lib") + @EmptyTemplate("3x3x3", floor=true)
+// Helper : ExtendedGameTestHelper (étend GameTestHelper vanilla)
+// Pas de fichier .snbt — @EmptyTemplate gère la structure
+// Exécution : ./gradlew build (intégré au test source set JUnit)
 ```
 
 ---

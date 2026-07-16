@@ -52,6 +52,15 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // Enable Minecraft on the JUnit `test` source set so unit tests can
+    // exercise records/enums referencing net.minecraft.* types
+    // (e.g. StatsSyncPayload, Objective subtypes). This wires up the
+    // Minecraft bootstrap required to instantiate game classes.
+    unitTest {
+        enable()
+        testedMod = mods.core_lib
+    }
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
