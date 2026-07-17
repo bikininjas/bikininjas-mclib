@@ -106,6 +106,55 @@ Vec3 pos = SpawnHelper.randomOffset(5.0, angle, fraction);
 Vec3 circlePos = SpawnHelper.circlePosition(center, 5.0, index, total);
 ```
 
+### Cooldowns (`com.bikininjas.corelib.cooldown`)
+
+```java
+// Vérifier si un joueur est en cooldown pour une action
+CooldownManager.isOnCooldown(player, "heal");          // boolean
+
+// Définir un cooldown (20 ticks = 1 seconde)
+CooldownManager.setCooldown(player, "heal", 20);       // ticks
+
+// Durée restante
+CooldownManager.getRemainingCooldown(player, "heal");   // ticks, 0 si terminé
+
+// Réinitialiser
+CooldownManager.resetCooldown(player, "heal");
+```
+
+### Particules (`com.bikininjas.corelib.particle`)
+
+```java
+// Particule de poussière colorée
+ParticleHelper.spawnColoredDust(level, pos, 0xFF0000);          // rouge
+ParticleHelper.spawnColoredDust(level, pos, 0xFF0000, 10);      // 10 particules
+
+// Formes prédéfinies
+ParticleHelper.spawnCircle(level, pos, ParticleTypes.FLAME, 5);  // cercle rayon 5
+ParticleHelper.spawnLine(level, from, to, ParticleTypes.END_ROD, 0.5);
+ParticleHelper.spawnBurst(level, pos, ParticleTypes.PORTAL, 20); // explosion
+
+// Conversion RGB → Vector3f
+Vector3f color = ParticleHelper.rgbToVector(0x66FF66);
+```
+
+### Tables de Loot (`com.bikininjas.corelib.loot`)
+
+```java
+// Injecter un item dans une table de loot existante
+// S'enregistre automatiquement via LootTableLoadEvent dans CoreLib
+LootTableHelper.injectInto(
+    ResourceLocation.withDefaultNamespace("chests/simple_dungeon"),
+    Items.DIAMOND,      // item à ajouter
+    5,                  // weight (poids relatif)
+    1,                  // min
+    3                   // max
+);
+
+// Injecter depuis un ResourceLocation custom
+LootTableHelper.injectInto(lootTableId, customItemId, weight, min, max);
+```
+
 ### Enchantements (`com.bikininjas.corelib.enchantment`)
 
 ```java
