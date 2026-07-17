@@ -33,7 +33,13 @@ jobs:
 
       - name: Smoke test (start server)
         run: |
+          rm -rf run/
+          mkdir -p run
           echo "eula=true" > run/eula.txt
+          echo "server-port=25566" > run/server.properties
+          echo "online-mode=false" >> run/server.properties
           # timeout 124 = server survived 90s → mod loads OK
           # any other exit code = server crashed during init → FAIL
           timeout 90 ./gradlew runServer 2>&1 || [ $? -eq 124 ]
+          fuser -k 25566/tcp 2>/dev/null || true
+          rm -rf run/
