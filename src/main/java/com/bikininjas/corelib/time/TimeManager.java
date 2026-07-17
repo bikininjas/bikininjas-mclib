@@ -94,6 +94,17 @@ public final class TimeManager {
     }
 
     /**
+     * Get the time rate multiplier for the given level.
+     *
+     * @return the rate (1.0 = normal, 0 = frozen, 72 = 72× speed, etc.)
+     */
+    public static float getTimeRate(@NotNull ServerLevel level) {
+        Objects.requireNonNull(level, "level must not be null");
+        var state = timeStates.get(level);
+        return state != null ? state.rate : 1.0f;
+    }
+
+    /**
      * Get the current day time of the level.
      */
     public static long getDayTime(@NotNull ServerLevel level) {

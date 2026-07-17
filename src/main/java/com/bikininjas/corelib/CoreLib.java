@@ -1,6 +1,7 @@
 package com.bikininjas.corelib;
 
 import com.bikininjas.corelib.client.StatsOverlayRenderer;
+import com.bikininjas.corelib.command.CommandRegister;
 import com.bikininjas.corelib.network.NetworkHandler;
 import com.bikininjas.corelib.objective.ObjectiveTracker;
 import com.bikininjas.corelib.randomevent.RandomEventManager;
@@ -61,5 +62,6 @@ public final class CoreLib {
         ObjectiveTracker.currentTick();
         PlayerStatsManager.init();
         RestrictionManager.init();
+        CommandRegister.init();
     }
 }
