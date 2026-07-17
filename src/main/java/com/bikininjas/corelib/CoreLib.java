@@ -23,6 +23,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.LootTableLoadEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 
 /**
@@ -90,6 +91,11 @@ public final class CoreLib {
         @SubscribeEvent
         static void onServerAboutToStart(ServerAboutToStartEvent event) {
             initModules();
+        }
+
+        @SubscribeEvent
+        static void onRegisterCommands(RegisterCommandsEvent event) {
+            ConfigCommand.register(event.getDispatcher());
         }
     }
 }

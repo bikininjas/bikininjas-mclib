@@ -33,7 +33,7 @@ public final class ConfigCommand {
         }
     }
 
-    private static void register(@NotNull CommandDispatcher<CommandSourceStack> dispatcher) {
+    public static void register(@NotNull CommandDispatcher<CommandSourceStack> dispatcher) {
         var node = Commands.literal("bikininjas")
                 .then(Commands.literal("config")
                         .executes(ctx -> executeConfig(ctx.getSource())))
