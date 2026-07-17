@@ -5,6 +5,7 @@ import com.bikininjas.corelib.objective.ChallengeDefinition;
 import com.bikininjas.corelib.objective.ChallengeRegistry;
 import com.bikininjas.corelib.objective.ObjectiveTracker;
 import com.bikininjas.corelib.stats.PlayerStatsManager;
+import com.bikininjas.corelib.stats.StatsDisplayPrefs;
 import com.bikininjas.corelib.time.TimeManager;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
@@ -178,6 +179,18 @@ public final class CommandRegister {
                                                     true);
                                             return Command.SINGLE_SUCCESS;
                                         }))));
+        statsNode.then(Commands.literal("toggle")
+                .executes(ctx -> {
+                   if (ctx.getSource().getPlayer() instanceof ServerPlayer player) {
+                       StatsDisplayPrefs.toggle(player);
+                       var enabled = StatsDisplayPrefs.isEnabled(player);
+                        ctx.getSource().sendSuccess(
+                                () -> Component.literal("Stats overlay: " + (enabled ? "ON" : "OFF")), true);
+                        return Command.SINGLE_SUCCESS;
+                    }
+                    ctx.getSource().sendFailure(Component.literal("Players only."));
+                    return 0;
+                }));
         dispatcher.register(statsNode);
     }
 
