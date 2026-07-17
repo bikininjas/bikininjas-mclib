@@ -83,6 +83,10 @@ public final class RandomEventManager {
         this.enabled = enabled;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     /**
      * Set the cooldown interval range (in ticks) between random events.
      */
