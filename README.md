@@ -114,6 +114,15 @@ EnchantmentUtils.canEnchantAtLevel(enchantment, 50);  // true si ≤ max level
 
 // Obtenir le niveau max d'enchantement (plafonné à 100)
 EnchantmentUtils.getMaxLevel(enchantment);
+
+// Vérifier si un item possède un enchantement
+EnchantmentUtils.hasEnchantment(stack, enchantment);      // boolean
+
+// Obtenir le niveau d'un enchantement sur un item
+int lvl = EnchantmentUtils.getEnchantmentLevel(stack, enchantment);  // 0 si absent
+
+// Retirer un enchantement d'un item
+EnchantmentUtils.removeEnchantment(stack, enchantment);   // true si retiré
 ```
 
 ### Messages (`com.bikininjas.corelib.message`)
@@ -132,8 +141,13 @@ MessageHelper.actionBar(player, "Texte en bas de l'écran");
 // Sons
 MessageHelper.playSound(player, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.0f);
 
-// Formatage couleurs (codes & → couleurs Minecraft)
+// Texte coloré générique (remplace red(), green(), blue(), etc.)
+MutableComponent styled = MessageHelper.colored("Texte stylisé", ChatFormatting.GOLD);
+
+// Raccourcis dépréciés (préférer colored())
 MutableComponent rouge = MessageHelper.red("Attention!");
+
+// Formatage couleurs (codes & → couleurs Minecraft)
 MutableComponent formatté = MessageHelper.format("&aVert &lGras &rNormal");
 ```
 
@@ -318,7 +332,32 @@ StatsClientData.isFieldVisible(bit);     // boolean (bitmask)
 
 ```java
 // Enregistrement de commandes (depuis le constructeur @Mod)
-CommandRegister.register(dispatcher, buildContext, selection);  // /kit list, /kit give
+CommandRegister.register(dispatcher, buildContext, selection);
+```
+
+Commandes disponibles :
+| Commande | Description |
+|---|---|
+| `/stats` | Affiche les stats du joueur (kills, deaths, blocks, crafts) |
+| `/time` | Contrôle du cycle jour/nuit (set, freeze, rate) |
+| `/challenge` | Système de défis et objectifs |
+| `/kit` | Gestion des kits (`/kit list`, `/kit give <name>`) |
+
+### Couleur / Tinting (`com.bikininjas.corelib.color`)
+
+```java
+// Teinter un item (couleur fixe) — compatible DeferredItem/DeferredBlock
+ColorAPI.tintItem(modBus, ModItems.MY_ITEM, 0xFF6666);
+ColorAPI.tintItem(modBus, ModItems.MY_ITEM, 0xFF6666, 1);      // layer spécifique
+
+// Teinter plusieurs items avec la même couleur
+ColorAPI.tintItems(modBus, 0x6666FF, item1, item2, item3);
+
+// Teinter un bloc avec un handler personnalisé
+ColorAPI.tintBlock(modBus, ModBlocks.MY_BLOCK, (state, level, pos, tintIndex) -> 0xRRGGBB);
+
+// Teinter plusieurs blocs avec le même handler
+ColorAPI.tintBlocks(modBus, handler, block1, block2, block3);
 ```
 
 ### Client (`com.bikininjas.corelib.client`)
@@ -449,6 +488,18 @@ public class TonMod {
     }
 }
 ```
+
+### KubeJS Compatibility
+
+core-lib ne fournit pas de recettes ni de tags KubeJS directement (ce sont des features concrètes, qui vont dans les mods enfants). 
+Cependant, les mods enfants peuvent exposer :
+
+- **Tags d'items** (`data/<mod_id>/tags/item/`) — pour référencer des groupes d'items dans les scripts KubeJS
+  - Super Crafting : 13 tags (ex: `#super_crafting:iron_plus_tools`)
+  - Funny Effects : 6 tags (ex: `#funnyeffects:funny_combat`)
+- **Recettes datapack** — toutes les recettes sont en JSON (pas de Java), donc `event.remove()` fonctionne correctement
+
+core-lib fournit les APIs pour créer ces tags/recettes facilement via `RecipeBuilder` et `Registers`.
 
 ---
 

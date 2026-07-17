@@ -51,7 +51,7 @@ public final class TimeManager {
     }
 
     /**
-     * Set time to midnight (13000).
+     * Set time to night time (13000).
      */
     public static void setNight(@NotNull ServerLevel level) {
         setTime(level, 13000);

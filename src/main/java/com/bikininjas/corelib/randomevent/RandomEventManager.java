@@ -105,7 +105,19 @@ public final class RandomEventManager {
         Objects.requireNonNull(level, "level must not be null");
         var selected = selectRandomEvent();
         if (selected != null) {
-            selected.execute(level, Vec3.atCenterOf(level.getSharedSpawnPos()));
+            // Use a random online player's position, falling back to world spawn
+            var server = level.getServer();
+            java.util.List<net.minecraft.server.level.ServerPlayer> players = server != null
+                    ? server.getPlayerList().getPlayers()
+                    : java.util.Collections.emptyList();
+            Vec3 origin;
+            if (!players.isEmpty()) {
+                var player = players.get(RNG.nextInt(players.size()));
+                origin = player.position();
+            } else {
+                origin = Vec3.atCenterOf(level.getSharedSpawnPos());
+            }
+            selected.execute(level, origin);
         }
         return selected;
     }
@@ -205,12 +217,13 @@ public final class RandomEventManager {
             mgr.ticksUntilNext--;
             if (mgr.ticksUntilNext <= 0) {
                 mgr.ticksUntilNext = mgr.nextCooldown();
-                // The event fires on all server levels; pick the first one
+                // Fire events on ALL server levels, not just the overworld
                 var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
                 if (server != null) {
-                    var level = server.overworld();
-                    if (level != null) {
-                        mgr.fireRandomEvent(level);
+                    for (var level : server.getAllLevels()) {
+                        if (level != null) {
+                            mgr.fireRandomEvent(level);
+                        }
                     }
                 }
             }
