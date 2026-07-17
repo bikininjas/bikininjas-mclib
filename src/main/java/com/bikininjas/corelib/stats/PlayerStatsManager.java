@@ -1,13 +1,15 @@
 package com.bikininjas.corelib.stats;
 
 import com.bikininjas.corelib.network.NetworkHandler;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
@@ -92,6 +94,35 @@ public final class PlayerStatsManager {
         // static initializer already ran; explicit call for module loading
     }
 
+    // -- Persistence ---------------------------------------------------------
+
+    /**
+     * Save player stats to persistent NBT data.
+     */
+    private static void savePlayerStats(@NotNull ServerPlayer player) {
+        var stats = getStats(player);
+        var tag = new CompoundTag();
+        tag.putInt("deaths", stats.deaths());
+        tag.putInt("kills", stats.kills());
+        tag.putInt("blocksBroken", stats.blocksBroken());
+        tag.putInt("crafts", stats.crafts());
+        player.getPersistentData().put("corelib_stats", tag);
+    }
+
+    /**
+     * Load player stats from persistent NBT data.
+     */
+    private static void loadPlayerStats(@NotNull ServerPlayer player) {
+        var tag = player.getPersistentData().getCompound("corelib_stats");
+        if (!tag.isEmpty()) {
+            var loaded = new PlayerStats(
+                tag.getInt("deaths"), tag.getInt("kills"),
+                tag.getInt("blocksBroken"), tag.getInt("crafts")
+            );
+            statsMap.put(player.getUUID(), loaded);
+        }
+    }
+
     // -- Internal mutation ---------------------------------------------------
 
     private static PlayerStats mutate(ServerPlayer player, java.util.function.UnaryOperator<PlayerStats> mutator) {
@@ -124,7 +155,15 @@ public final class PlayerStatsManager {
         @SubscribeEvent
         static void onPlayerLogin(@NotNull PlayerEvent.PlayerLoggedInEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
+                loadPlayerStats(player);
                 NetworkHandler.sendStatsSync(player);
+            }
+        }
+
+        @SubscribeEvent
+        static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                savePlayerStats(player);
             }
         }
 

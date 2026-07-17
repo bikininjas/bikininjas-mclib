@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.minecraft.ChatFormatting;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.NotNull;
 
@@ -234,6 +235,33 @@ public final class ObjectiveTracker {
         }
 
         @SubscribeEvent
+        static void onPlayerLogin(@NotNull PlayerEvent.PlayerLoggedInEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                loadFromPlayer(player);
+            }
+        }
+
+        @SubscribeEvent
+        static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                saveToPlayer(player);
+            }
+        }
+
+        @SubscribeEvent
+        static void onPlayerClone(@NotNull PlayerEvent.Clone event) {
+            var original = event.getOriginal();
+            var newPlayer = event.getEntity();
+            if (original instanceof ServerPlayer orig && newPlayer instanceof ServerPlayer newP) {
+                var state = activeChallenges.get(orig);
+                if (state != null) {
+                    activeChallenges.put(newP, state);
+                    activeChallenges.remove(orig);
+                }
+            }
+        }
+
+        @SubscribeEvent
         static void onTick(@NotNull ServerTickEvent.Post event) {
             // Check for completed challenges every 20 ticks (1 second)
             if (event.getServer().getTickCount() % 20 != 0) return;
@@ -254,6 +282,7 @@ public final class ObjectiveTracker {
                                 MessageHelper.colored(state.challenge.name(), ChatFormatting.GOLD)),
                         server);
                 stopChallenge(player);
+                player.getPersistentData().remove("corelib_challenge");
             }
         }
     }
