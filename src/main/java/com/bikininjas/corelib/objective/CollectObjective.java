@@ -21,6 +21,7 @@ public record CollectObjective(
 ) implements Objective {
 
     private static final ConcurrentMap<String, ConcurrentMap<ServerPlayer, Integer>> collectCounts = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Item, String> collectTargets = new ConcurrentHashMap<>();
 
     static {
         NeoForge.EVENT_BUS.register(CollectHandler.class);
@@ -29,6 +30,7 @@ public record CollectObjective(
     public CollectObjective {
         Objects.requireNonNull(description, "description must not be null");
         Objects.requireNonNull(targetItem, "targetItem must not be null");
+        collectTargets.put(targetItem, description);
     }
 
     @Override
@@ -53,6 +55,17 @@ public record CollectObjective(
         return ObjectiveType.COLLECT;
     }
 
+    // -- Cleanup --------------------------------------------------------------
+
+    /**
+     * Remove all tracking data for a given description (called when a challenge ends).
+     */
+    public static void cleanup(@NotNull String description) {
+        Objects.requireNonNull(description, "description must not be null");
+        collectTargets.entrySet().removeIf(e -> e.getValue().equals(description));
+        collectCounts.remove(description);
+    }
+
     // -- Handler -------------------------------------------------------------
 
     private static final class CollectHandler {
@@ -63,10 +76,14 @@ public record CollectObjective(
         static void onPickup(@NotNull ItemEntityPickupEvent.Post event) {
             var player = event.getPlayer();
             if (!(player instanceof ServerPlayer serverPlayer)) return;
-            var item = event.getItemEntity().getItem();
+            var stack = event.getItemEntity().getItem();
+            var item = stack.getItem();
 
-            collectCounts.computeIfAbsent(item.getItem().toString(), k -> new ConcurrentHashMap<>())
-                    .merge(serverPlayer, item.getCount(), Integer::sum);
+            var descKey = collectTargets.get(item);
+            if (descKey != null) {
+                collectCounts.computeIfAbsent(descKey, k -> new ConcurrentHashMap<>())
+                        .merge(serverPlayer, stack.getCount(), Integer::sum);
+            }
         }
     }
 }

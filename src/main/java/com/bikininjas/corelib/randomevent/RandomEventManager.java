@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class RandomEventManager {
 
     private static final RandomEventManager INSTANCE = new RandomEventManager();
+    private static final Random RNG = new Random();
 
     private final List<Entry> events = new CopyOnWriteArrayList<>();
     private boolean enabled = true;
@@ -136,12 +137,11 @@ public final class RandomEventManager {
         if (events.isEmpty()) {
             return null;
         }
-        var rng = new Random();
         int totalWeight = events.stream().mapToInt(e -> e.event.weight()).sum();
         if (totalWeight <= 0) {
             return null;
         }
-        int roll = rng.nextInt(totalWeight);
+        int roll = RNG.nextInt(totalWeight);
         int cumulative = 0;
         for (var entry : events) {
             cumulative += entry.event.weight();
@@ -186,7 +186,7 @@ public final class RandomEventManager {
         if (cooldownMax <= cooldownMin) {
             return cooldownMin;
         }
-        return cooldownMin + new Random().nextInt(cooldownMax - cooldownMin + 1);
+        return cooldownMin + RNG.nextInt(cooldownMax - cooldownMin + 1);
     }
 
     // -- Event handler -------------------------------------------------------

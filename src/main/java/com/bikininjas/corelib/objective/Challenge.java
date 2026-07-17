@@ -22,8 +22,14 @@ public record Challenge(
 
     /**
      * Check whether all objectives are complete.
+     *
+     * @deprecated This method always returns {@code true} because it has no {@link net.minecraft.server.level.ServerPlayer}
+     *             context. Use {@link Objective#isComplete(ServerPlayer)} directly on each objective instead,
+     *             or {@link com.bikininjas.corelib.objective.ObjectiveTracker#isChallengeComplete(ServerPlayer)}.
      */
+    @Deprecated
+    @SuppressWarnings("DeprecatedIsStillUsed")
     public boolean isComplete() {
-        return objectives.stream().allMatch(obj -> true); // evaluated per-player in tracker
+        return true;
     }
 }

@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class PlayerStatsManager {
 
     private static final Map<UUID, PlayerStats> statsMap = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> lastSyncTick = new ConcurrentHashMap<>();
 
     static {
         NeoForge.EVENT_BUS.register(StatsHandler.class);
@@ -101,6 +102,19 @@ public final class PlayerStatsManager {
         return updated;
     }
 
+    /**
+     * Check if enough ticks have passed since the last sync (minimum 20 ticks / 1 second).
+     */
+    private static boolean shouldSync(@NotNull ServerPlayer player) {
+        var currentTick = player.serverLevel().getGameTime();
+        var lastSync = lastSyncTick.getOrDefault(player.getUUID(), 0L);
+        if (currentTick - lastSync >= 20) {
+            lastSyncTick.put(player.getUUID(), currentTick);
+            return true;
+        }
+        return false;
+    }
+
     // -- Event handler -------------------------------------------------------
 
     private static final class StatsHandler {
@@ -122,15 +136,15 @@ public final class PlayerStatsManager {
 
             if (victim != null && killer != null && victim.getUUID().equals(killer.getUUID())) {
                 mutate(victim, s -> new PlayerStats(s.deaths() + 1, s.kills() + 1, s.blocksBroken(), s.crafts()));
-                NetworkHandler.sendStatsSync(victim);
+                if (shouldSync(victim)) NetworkHandler.sendStatsSync(victim);
             } else {
                 if (victim != null) {
                     mutate(victim, s -> new PlayerStats(s.deaths() + 1, s.kills(), s.blocksBroken(), s.crafts()));
-                    NetworkHandler.sendStatsSync(victim);
+                    if (shouldSync(victim)) NetworkHandler.sendStatsSync(victim);
                 }
                 if (killer != null) {
                     mutate(killer, s -> new PlayerStats(s.deaths(), s.kills() + 1, s.blocksBroken(), s.crafts()));
-                    NetworkHandler.sendStatsSync(killer);
+                    if (shouldSync(killer)) NetworkHandler.sendStatsSync(killer);
                 }
             }
         }
@@ -139,7 +153,7 @@ public final class PlayerStatsManager {
         static void onBlockBreak(@NotNull BlockEvent.BreakEvent event) {
             if (event.getPlayer() instanceof ServerPlayer player) {
                 mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken() + 1, s.crafts()));
-                NetworkHandler.sendStatsSync(player);
+                if (shouldSync(player)) NetworkHandler.sendStatsSync(player);
             }
         }
 
@@ -147,7 +161,7 @@ public final class PlayerStatsManager {
         static void onCraft(@NotNull PlayerEvent.ItemCraftedEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 mutate(player, s -> new PlayerStats(s.deaths(), s.kills(), s.blocksBroken(), s.crafts() + 1));
-                NetworkHandler.sendStatsSync(player);
+                if (shouldSync(player)) NetworkHandler.sendStatsSync(player);
             }
         }
     }

@@ -56,6 +56,17 @@ public record KillObjective(
         return ObjectiveType.KILL;
     }
 
+    /**
+     * Remove tracking data for a completed challenge, preventing memory leaks.
+     *
+     * @param description the description key to clean up
+     */
+    public static void cleanup(@NotNull String description) {
+        Objects.requireNonNull(description, "description must not be null");
+        activeTargets.remove(description);
+        killCounts.remove(description);
+    }
+
     // -- Handler -------------------------------------------------------------
 
     private static final class KillHandler {

@@ -5,8 +5,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
+import net.minecraft.ChatFormatting;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.NotNull;
 
@@ -36,9 +35,20 @@ public final class ObjectiveTracker {
      * Start a challenge for a player.
      */
     public static void startChallenge(@NotNull ServerPlayer player, @NotNull Challenge challenge) {
+        startChallenge(player, challenge, -1);
+    }
+
+    /**
+     * Start a challenge for a player with an explicit start tick.
+     *
+     * @param player    the player
+     * @param challenge the challenge to start
+     * @param startTick the server game tick when the challenge started, or -1 to use the current time
+     */
+    public static void startChallenge(@NotNull ServerPlayer player, @NotNull Challenge challenge, long startTick) {
         Objects.requireNonNull(player, "player must not be null");
         Objects.requireNonNull(challenge, "challenge must not be null");
-        var state = new ChallengeState(challenge);
+        var state = new ChallengeState(challenge, startTick);
         activeChallenges.put(player, state);
 
         // Start survival timers
@@ -57,6 +67,13 @@ public final class ObjectiveTracker {
         var state = activeChallenges.remove(player);
         if (state != null) {
             SurvivalObjective.stop(player);
+            for (var obj : getAllObjectives(state)) {
+                if (obj instanceof KillObjective killObj) {
+                    KillObjective.cleanup(killObj.description());
+                } else if (obj instanceof CollectObjective collectObj) {
+                    CollectObjective.cleanup(collectObj.description());
+                }
+            }
         }
     }
 
@@ -172,7 +189,14 @@ public final class ObjectiveTracker {
     public static void loadFromPlayer(@NotNull ServerPlayer player) {
         var data = player.getPersistentData().getCompound("corelib_challenge");
         if (data.isEmpty()) return;
-        // Restore is handled at a higher level by re-creating the challenge from the registry
+        var challengeName = data.getString("challenge_name");
+        if (challengeName.isEmpty()) return;
+        var definition = ChallengeRegistry.get(challengeName);
+        if (definition != null) {
+            var challenge = definition.toChallenge();
+            var startTick = data.getLong("start_tick");
+            startChallenge(player, challenge, startTick);
+        }
     }
 
     // -- Internal ------------------------------------------------------------
@@ -192,6 +216,14 @@ public final class ObjectiveTracker {
             this.challenge = challenge;
             var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
             this.startTick = server != null ? server.overworld().getGameTime() : 0;
+        }
+
+        ChallengeState(Challenge challenge, long startTick) {
+            this.challenge = challenge;
+            this.startTick = startTick >= 0 ? startTick
+                    : net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer() != null
+                    ? net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer().overworld().getGameTime()
+                    : 0;
         }
     }
 
@@ -218,11 +250,10 @@ public final class ObjectiveTracker {
                 var state = entry.getValue();
                 var server = player.serverLevel().getServer();
                 MessageHelper.broadcastChat(
-                        MessageHelper.aqua("Challenge completed: ").append(
-                                MessageHelper.gold(state.challenge.name())),
+                        MessageHelper.colored("Challenge completed: ", ChatFormatting.AQUA).append(
+                                MessageHelper.colored(state.challenge.name(), ChatFormatting.GOLD)),
                         server);
-                activeChallenges.remove(player);
-                SurvivalObjective.stop(player);
+                stopChallenge(player);
             }
         }
     }

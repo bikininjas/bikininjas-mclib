@@ -206,59 +206,128 @@ public final class MessageHelper {
 
     // -- Named colour helpers -------------------------------------------------
 
+    /**
+     * Create a colored text component.
+     *
+     * @param text  the text to color
+     * @param color the formatting color to apply
+     * @return a colored {@link MutableComponent}
+     */
+    public static @NotNull MutableComponent colored(@NotNull String text, @NotNull ChatFormatting color) {
+        Objects.requireNonNull(text, "text must not be null");
+        Objects.requireNonNull(color, "color must not be null");
+        return Component.literal(text).withStyle(color);
+    }
+
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#RED}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent red(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.RED);
+        return colored(text, ChatFormatting.RED);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#GREEN}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent green(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.GREEN);
+        return colored(text, ChatFormatting.GREEN);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#BLUE}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent blue(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.BLUE);
+        return colored(text, ChatFormatting.BLUE);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#GOLD}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent gold(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.GOLD);
+        return colored(text, ChatFormatting.GOLD);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#YELLOW}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent yellow(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.YELLOW);
+        return colored(text, ChatFormatting.YELLOW);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#AQUA}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent aqua(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.AQUA);
+        return colored(text, ChatFormatting.AQUA);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#LIGHT_PURPLE}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent lightPurple(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.LIGHT_PURPLE);
+        return colored(text, ChatFormatting.LIGHT_PURPLE);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#WHITE}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent white(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.WHITE);
+        return colored(text, ChatFormatting.WHITE);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#GRAY}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent gray(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.GRAY);
+        return colored(text, ChatFormatting.GRAY);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#DARK_RED}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent darkRed(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.DARK_RED);
+        return colored(text, ChatFormatting.DARK_RED);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#DARK_GREEN}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent darkGreen(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.DARK_GREEN);
+        return colored(text, ChatFormatting.DARK_GREEN);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#DARK_BLUE}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent darkBlue(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.DARK_BLUE);
+        return colored(text, ChatFormatting.DARK_BLUE);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#DARK_AQUA}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent darkAqua(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.DARK_AQUA);
+        return colored(text, ChatFormatting.DARK_AQUA);
     }
 
+    /**
+     * @deprecated Use {@link #colored(String, ChatFormatting)} with {@link ChatFormatting#DARK_GRAY}.
+     */
+    @Deprecated
     public static @NotNull MutableComponent darkGray(@NotNull String text) {
-        return text(text).withStyle(ChatFormatting.DARK_GRAY);
+        return colored(text, ChatFormatting.DARK_GRAY);
     }
 }
