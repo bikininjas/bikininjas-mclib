@@ -76,7 +76,6 @@ public final class CoreLib {
         PlayerStatsManager.init();
         RestrictionManager.init();
         CommandRegister.init();
-        ConfigCommand.init();
     }
 
     // Registered on NeoForge.EVENT_BUS — MUST use @SubscribeEvent, lambdas don't fire
@@ -91,6 +90,11 @@ public final class CoreLib {
         @SubscribeEvent
         static void onServerAboutToStart(ServerAboutToStartEvent event) {
             initModules();
+        }
+
+        @SubscribeEvent
+        static void onRegisterCommands(RegisterCommandsEvent event) {
+            ConfigCommand.register(event.getDispatcher());
         }
     }
 }
