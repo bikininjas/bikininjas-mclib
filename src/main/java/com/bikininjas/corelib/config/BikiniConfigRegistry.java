@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.minecraft.network.chat.Component;
+
 public final class BikiniConfigRegistry {
 
     private static final Map<String, Map<String, ConfigOption>> options = new ConcurrentHashMap<>();
@@ -112,5 +114,40 @@ public final class BikiniConfigRegistry {
             case FLOAT -> json.get(key).getAsFloat();
             case ENUM, STRING -> json.get(key).getAsString();
         };
+    }
+
+    // -- Convenience methods for child mods ------------------------------------
+
+    public static void registerBool(@NotNull String modId, @NotNull String key, @NotNull String name, boolean defaultValue) {
+        registerMod(modId, modId);
+        registerOption(new ConfigOption(modId, key, "General",
+                Component.literal(name), Component.empty(),
+                ConfigOption.OptionType.BOOL, defaultValue, defaultValue, null));
+    }
+
+    public static void registerEnum(@NotNull String modId, @NotNull String key, @NotNull String name,
+                                    @NotNull String defaultValue, @NotNull String... values) {
+        registerMod(modId, modId);
+        registerOption(new ConfigOption(modId, key, "General",
+                Component.literal(name), Component.empty(),
+                ConfigOption.OptionType.ENUM, defaultValue, defaultValue, values));
+    }
+
+    public static boolean isEnabled(@NotNull String modId, @NotNull String key) {
+        for (var opt : getOptions(modId)) {
+            if (opt.key().equals(key) && opt.type() == ConfigOption.OptionType.BOOL) {
+                return (boolean) opt.currentValue();
+            }
+        }
+        return true;
+    }
+
+    public static String getString(@NotNull String modId, @NotNull String key, @NotNull String defaultVal) {
+        for (var opt : getOptions(modId)) {
+            if (opt.key().equals(key)) {
+                return String.valueOf(opt.currentValue());
+            }
+        }
+        return defaultVal;
     }
 }
