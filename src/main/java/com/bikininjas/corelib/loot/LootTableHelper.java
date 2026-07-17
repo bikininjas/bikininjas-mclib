@@ -110,7 +110,7 @@ public final class LootTableHelper {
                     .name("core_lib_injected_" + entry.itemId().getPath())
                     .setRolls(ConstantValue.exactly(1.0F))
                     .add(LootItem.lootTableItem(item)
-                            .setWeight((int) entry.weight())
+                            .setWeight(Math.max(1, Math.round(entry.weight())))
                             .apply(SetItemCountFunction.setCount(
                                     UniformGenerator.between(entry.minCount(), entry.maxCount()))
                             )

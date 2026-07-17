@@ -164,6 +164,7 @@ public final class PlayerStatsManager {
         static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 savePlayerStats(player);
+                statsMap.remove(player.getUUID());
             }
         }
 

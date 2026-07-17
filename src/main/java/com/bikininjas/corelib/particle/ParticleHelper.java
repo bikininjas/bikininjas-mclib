@@ -9,7 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
 
 import java.util.Objects;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Utility for spawning particles on the server side.
@@ -17,8 +17,6 @@ import java.util.Random;
  * All methods are static. No event bus — pure helper.
  */
 public final class ParticleHelper {
-
-    private static final Random RNG = new Random();
 
     private ParticleHelper() {
     }
@@ -50,9 +48,9 @@ public final class ParticleHelper {
         DustParticleOptions options = new DustParticleOptions(color, 1.0F);
 
         for (int i = 0; i < count; i++) {
-            double ox = (RNG.nextDouble() - 0.5) * 1.0;
-            double oy = (RNG.nextDouble() - 0.5) * 1.0;
-            double oz = (RNG.nextDouble() - 0.5) * 1.0;
+            double ox = (ThreadLocalRandom.current().nextDouble() - 0.5) * 1.0;
+            double oy = (ThreadLocalRandom.current().nextDouble() - 0.5) * 1.0;
+            double oz = (ThreadLocalRandom.current().nextDouble() - 0.5) * 1.0;
             level.sendParticles(options,
                     pos.x + ox, pos.y + oy, pos.z + oz,
                     1, 0, 0, 0, 0);
@@ -154,9 +152,9 @@ public final class ParticleHelper {
         Objects.requireNonNull(options, "options must not be null");
 
         for (int i = 0; i < count; i++) {
-            double vx = (RNG.nextDouble() - 0.5) * speed;
-            double vy = (RNG.nextDouble() - 0.5) * speed;
-            double vz = (RNG.nextDouble() - 0.5) * speed;
+            double vx = (ThreadLocalRandom.current().nextDouble() - 0.5) * speed;
+            double vy = (ThreadLocalRandom.current().nextDouble() - 0.5) * speed;
+            double vz = (ThreadLocalRandom.current().nextDouble() - 0.5) * speed;
             level.sendParticles(options, pos.x, pos.y, pos.z, 0, vx, vy, vz, 1.0);
         }
     }

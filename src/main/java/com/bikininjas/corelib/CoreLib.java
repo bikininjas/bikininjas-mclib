@@ -1,6 +1,7 @@
 package com.bikininjas.corelib;
 
 import com.bikininjas.corelib.client.StatsOverlayRenderer;
+import com.bikininjas.corelib.client.ConfigKeybinds;
 import com.bikininjas.corelib.command.CommandRegister;
 import com.bikininjas.corelib.command.ConfigCommand;
 import com.bikininjas.corelib.cooldown.CooldownManager;
@@ -48,6 +49,9 @@ public final class CoreLib {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener((net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) -> {
                 NeoForge.EVENT_BUS.register(StatsOverlayRenderer.Renderer.class);
+            });
+            modBus.addListener((net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent event) -> {
+                ConfigKeybinds.registerKeyMapping(event);
             });
         }
 

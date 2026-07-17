@@ -3,7 +3,9 @@ package com.bikininjas.corelib.config.client;
 import com.bikininjas.corelib.config.BikiniConfigRegistry;
 import com.bikininjas.corelib.config.ConfigOption;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
@@ -20,6 +22,7 @@ public class BikiniConfigScreen extends Screen {
 
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
+    private static final int EDIT_BOX_WIDTH = 60;
     private static final int SCROLL_SPEED = 10;
 
     private final List<String> modIds;
@@ -56,7 +59,7 @@ public class BikiniConfigScreen extends Screen {
             int i = 0;
             for (var option : modOptions.get(selectedModIndex)) {
                 if (y + BUTTON_HEIGHT > this.height - 40) break; // off-screen
-                addRenderableWidget(createOptionWidget(option, y));
+                addOptionWidget(option, y);
                 y += BUTTON_HEIGHT + 4;
                 i++;
             }
@@ -81,13 +84,33 @@ public class BikiniConfigScreen extends Screen {
         ).pos(this.width / 2 - 50, this.height - 28).size(100, BUTTON_HEIGHT).build());
     }
 
-    private Button createOptionWidget(ConfigOption option, int y) {
-        var label = option.displayName().copy().append(": ").append(String.valueOf(option.currentValue()));
-        return Button.builder(label, b -> {
-            Object newValue = toggleValue(option);
-            BikiniConfigRegistry.updateValue(option.modId(), option.key(), newValue);
-            rebuildWidgets();
-        }).pos(this.width / 2 + 10, y).size(BUTTON_WIDTH, BUTTON_HEIGHT).build();
+    private void addOptionWidget(ConfigOption option, int y) {
+        switch (option.type()) {
+            case BOOL, ENUM -> {
+                var label = option.displayName().copy().append(": ").append(String.valueOf(option.currentValue()));
+                addRenderableWidget(Button.builder(label, b -> {
+                    Object newValue = toggleValue(option);
+                    BikiniConfigRegistry.updateValue(option.modId(), option.key(), newValue);
+                    rebuildWidgets();
+                }).pos(this.width / 2 + 10, y).size(BUTTON_WIDTH, BUTTON_HEIGHT).build());
+            }
+            case INT, FLOAT -> {
+                var label = option.displayName().copy().append(": ");
+                int labelX = this.width / 2 + 10;
+                int editX = labelX + font.width(label.getString()) + 4;
+                var editBox = new EditBox(font, editX, y, EDIT_BOX_WIDTH, BUTTON_HEIGHT, Component.empty());
+                editBox.setValue(String.valueOf(option.currentValue()));
+                editBox.setResponder(text -> {
+                    try {
+                        Number val = option.type() == ConfigOption.OptionType.INT
+                                ? Integer.parseInt(text) : Float.parseFloat(text);
+                        BikiniConfigRegistry.updateValue(option.modId(), option.key(), val);
+                    } catch (NumberFormatException ignored) {
+                    }
+                });
+                addRenderableWidget(editBox);
+            }
+        }
     }
 
     private Object toggleValue(ConfigOption option) {
@@ -115,6 +138,19 @@ public class BikiniConfigScreen extends Screen {
         if (!modIds.isEmpty() && selectedModIndex < modIds.size()) {
             gui.drawString(font, "§6§l" + BikiniConfigRegistry.getModDisplayName(modIds.get(selectedModIndex)),
                     width / 2 + 10, 25, 0xFFFFFF);
+            // Draw labels for INT/FLOAT options (EditBox doesn't show name)
+            int idx = 0;
+            for (var option : modOptions.get(selectedModIndex)) {
+                int y = 40 + idx * (BUTTON_HEIGHT + 4) - scrollOffset;
+                if (y + BUTTON_HEIGHT > this.height - 40) break;
+                if (y < 35) { idx++; continue; }
+                if (option.type() == ConfigOption.OptionType.INT
+                        || option.type() == ConfigOption.OptionType.FLOAT) {
+                    gui.drawString(font, option.displayName().getString() + ":",
+                            width / 2 + 10, y + 5, 0xFFFFFF);
+                }
+                idx++;
+            }
         }
     }
 

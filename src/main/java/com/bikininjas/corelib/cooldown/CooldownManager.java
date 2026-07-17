@@ -49,11 +49,18 @@ public final class CooldownManager {
 
     /**
      * Check whether the given player is still on cooldown for the given key.
+     * <p>
+     * <b>Deprecated</b> — without a ServerLevel the expiry tick cannot be compared
+     * to the current server tick. This method only checks whether an entry exists,
+     * which returns true for expired cooldowns awaiting periodic cleanup.
+     * Prefer {@link #isOnCooldown(ServerLevel, UUID, String)}.
      *
      * @param playerId the player's UUID
      * @param key      cooldown identifier
-     * @return true if the cooldown is still active
+     * @return true if an entry exists (may be stale)
+     * @deprecated Use {@link #isOnCooldown(ServerLevel, UUID, String)} for accurate results
      */
+    @Deprecated
     public static boolean isOnCooldown(@NotNull UUID playerId, @NotNull String key) {
         Objects.requireNonNull(playerId, "playerId must not be null");
         Objects.requireNonNull(key, "key must not be null");
@@ -67,15 +74,44 @@ public final class CooldownManager {
     }
 
     /**
+     * Check whether the given player is still on cooldown, comparing the
+     * stored expiry tick against the current server tick.
+     *
+     * @param level    the current server level (for tick access)
+     * @param playerId the player's UUID
+     * @param key      cooldown identifier
+     * @return true if the cooldown is still active
+     */
+    public static boolean isOnCooldown(@NotNull net.minecraft.server.level.ServerLevel level,
+                                       @NotNull UUID playerId,
+                                       @NotNull String key) {
+        Objects.requireNonNull(level, "level must not be null");
+        Objects.requireNonNull(playerId, "playerId must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+
+        var playerMap = COOLDOWNS.get(key);
+        if (playerMap == null) {
+            return false;
+        }
+        Long expiry = playerMap.get(playerId);
+        if (expiry == null) {
+            return false;
+        }
+        return expiry > level.getServer().getTickCount();
+    }
+
+    /**
      * Check if the given player is on cooldown for the given key.
-     * Without a {@link net.minecraft.server.level.ServerLevel}, only a boolean
+     * Without a {@link net.minecraft.server.level.ServerLevel}, only a binary
      * answer is available. For exact remaining ticks, use
      * {@link #getRemainingTicks(net.minecraft.server.level.ServerLevel, UUID, String)}.
      *
      * @param playerId the player's UUID
      * @param key      cooldown identifier
      * @return 1 if still on cooldown, 0 otherwise
+     * @deprecated Use {@link #getRemainingTicks(ServerLevel, UUID, String)} for accurate results
      */
+    @Deprecated
     public static long getRemainingTicks(@NotNull UUID playerId, @NotNull String key) {
         Objects.requireNonNull(playerId, "playerId must not be null");
         Objects.requireNonNull(key, "key must not be null");

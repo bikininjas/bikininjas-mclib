@@ -3,7 +3,6 @@ package com.bikininjas.corelib.log;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
-import org.slf4j.helpers.MessageFormatter;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -101,7 +100,7 @@ public class ErrorBuilder {
         }
 
         if (cause != null) {
-            logger.error(MessageFormatter.basicArrayFormat(sb.toString(), new Object[0]), cause);
+            logger.error(sb.toString(), cause);
         } else {
             logger.error(sb.toString());
         }

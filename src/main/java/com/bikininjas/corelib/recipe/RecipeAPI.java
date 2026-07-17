@@ -5,6 +5,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import org.jetbrains.annotations.NotNull;
@@ -28,9 +29,7 @@ public final class RecipeAPI {
     private static final java.util.Set<String> pendingRemovals = ConcurrentHashMap.newKeySet();
 
     static {
-        NeoForge.EVENT_BUS.addListener((ServerAboutToStartEvent event) -> {
-            applyPending(event.getServer());
-        });
+        NeoForge.EVENT_BUS.register(EventHandler.class);
     }
 
     private RecipeAPI() {
@@ -95,5 +94,14 @@ public final class RecipeAPI {
 
         pendingAdditions.clear();
         pendingRemovals.clear();
+    }
+
+    private static final class EventHandler {
+        private EventHandler() {}
+
+        @SubscribeEvent
+        static void onServerAboutToStart(ServerAboutToStartEvent event) {
+            applyPending(event.getServer());
+        }
     }
 }

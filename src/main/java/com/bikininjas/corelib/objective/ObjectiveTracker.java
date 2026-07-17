@@ -216,7 +216,12 @@ public final class ObjectiveTracker {
         ChallengeState(Challenge challenge) {
             this.challenge = challenge;
             var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
-            this.startTick = server != null ? server.overworld().getGameTime() : 0;
+            if (server != null) {
+                var overworld = server.overworld();
+                this.startTick = overworld != null ? overworld.getGameTime() : 0;
+            } else {
+                this.startTick = 0;
+            }
         }
 
         ChallengeState(Challenge challenge, long startTick) {
@@ -245,6 +250,7 @@ public final class ObjectiveTracker {
         static void onPlayerLogout(@NotNull PlayerEvent.PlayerLoggedOutEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 saveToPlayer(player);
+                activeChallenges.remove(player);
             }
         }
 

@@ -1,5 +1,7 @@
 package com.bikininjas.corelib.config;
 
+import com.bikininjas.corelib.log.LogManager;
+import com.bikininjas.corelib.log.ModLogger;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -15,6 +17,7 @@ import net.minecraft.network.chat.Component;
 
 public final class BikiniConfigRegistry {
 
+    private static final ModLogger LOGGER = LogManager.getLogger("core_lib", BikiniConfigRegistry.class);
     private static final Map<String, Map<String, ConfigOption>> options = new ConcurrentHashMap<>();
     private static final Map<String, String> modDisplayNames = new ConcurrentHashMap<>();
     private static final Gson GSON = new Gson();
@@ -76,7 +79,9 @@ public final class BikiniConfigRegistry {
         try {
             Files.createDirectories(configPath.getParent());
             Files.writeString(configPath, GSON.toJson(root));
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.error("Failed to save config").cause(e).report();
+        }
     }
 
     public static void loadConfig() {
@@ -95,7 +100,9 @@ public final class BikiniConfigRegistry {
                     updateValue(modEntry.getKey(), key, value);
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.error("Failed to load config file").cause(e).report();
+        }
     }
 
     private static void addValueToJson(JsonObject json, String key, Object value, ConfigOption.OptionType type) {
@@ -131,6 +138,13 @@ public final class BikiniConfigRegistry {
         registerOption(new ConfigOption(modId, key, "General",
                 Component.literal(name), Component.empty(),
                 ConfigOption.OptionType.ENUM, defaultValue, defaultValue, values));
+    }
+
+    public static void registerInt(@NotNull String modId, @NotNull String key, @NotNull String name, int defaultValue) {
+        registerMod(modId, modId);
+        registerOption(new ConfigOption(modId, key, "General",
+                Component.literal(name), Component.empty(),
+                ConfigOption.OptionType.INT, defaultValue, defaultValue, null));
     }
 
     public static boolean isEnabled(@NotNull String modId, @NotNull String key) {

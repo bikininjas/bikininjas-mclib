@@ -127,6 +127,21 @@ public final class RandomEventManager {
     }
 
     /**
+     * Manually fire a random event at a specific origin (ignores cooldown).
+     *
+     * @return the event that was fired, or null if no events are registered
+     */
+    public @Nullable RandomEvent fireRandomEvent(@NotNull ServerLevel level, @NotNull Vec3 origin) {
+        Objects.requireNonNull(level, "level must not be null");
+        Objects.requireNonNull(origin, "origin must not be null");
+        var selected = selectRandomEvent();
+        if (selected != null) {
+            selected.execute(level, origin);
+        }
+        return selected;
+    }
+
+    /**
      * Fire a specific event by name, ignoring cooldown.
      *
      * @return the event that was fired, or null if not found
@@ -221,13 +236,11 @@ public final class RandomEventManager {
             mgr.ticksUntilNext--;
             if (mgr.ticksUntilNext <= 0) {
                 mgr.ticksUntilNext = mgr.nextCooldown();
-                // Fire events on ALL server levels, not just the overworld
                 var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
                 if (server != null) {
-                    for (var level : server.getAllLevels()) {
-                        if (level != null) {
-                            mgr.fireRandomEvent(level);
-                        }
+                    var overworld = server.overworld();
+                    if (overworld != null) {
+                        mgr.fireRandomEvent(overworld);
                     }
                 }
             }
