@@ -5,6 +5,8 @@ import com.bikininjas.corelib.command.CommandRegister;
 import com.bikininjas.corelib.command.ConfigCommand;
 import com.bikininjas.corelib.cooldown.CooldownManager;
 import com.bikininjas.corelib.loot.LootTableHelper;
+import com.bikininjas.corelib.log.LogManager;
+import com.bikininjas.corelib.log.ModLogger;
 import com.bikininjas.corelib.network.NetworkHandler;
 import com.bikininjas.corelib.objective.ObjectiveTracker;
 import com.bikininjas.corelib.particle.ParticleHelper;
@@ -15,6 +17,7 @@ import com.bikininjas.corelib.stats.PlayerStatsManager;
 import com.bikininjas.corelib.time.TimeManager;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
@@ -41,22 +44,15 @@ public final class CoreLib {
 
         NetworkHandler.register(modBus);
 
-        // Client setup
+        // Client setup — modBus.addListener() works fine for mod bus events
         if (FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener((net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) -> {
                 NeoForge.EVENT_BUS.register(StatsOverlayRenderer.Renderer.class);
             });
         }
 
-        // Loot table injection on load
-        NeoForge.EVENT_BUS.addListener((LootTableLoadEvent event) -> {
-            LootTableHelper.injectInto(event.getName(), event.getTable());
-        });
-
-        // Server init — force module class loading after server starts
-        NeoForge.EVENT_BUS.addListener((ServerAboutToStartEvent event) -> {
-            initModules();
-        });
+        // NeoForge (game) event bus — MUST use @SubscribeEvent class, lambdas don't fire
+        NeoForge.EVENT_BUS.register(GameEventHandler.class);
     }
 
     /**
@@ -76,5 +72,20 @@ public final class CoreLib {
         RestrictionManager.init();
         CommandRegister.init();
         ConfigCommand.init();
+    }
+
+    // Registered on NeoForge.EVENT_BUS — MUST use @SubscribeEvent, lambdas don't fire
+    private static final class GameEventHandler {
+        private GameEventHandler() {}
+
+        @SubscribeEvent
+        static void onLootTableLoad(LootTableLoadEvent event) {
+            LootTableHelper.injectInto(event.getName(), event.getTable());
+        }
+
+        @SubscribeEvent
+        static void onServerAboutToStart(ServerAboutToStartEvent event) {
+            initModules();
+        }
     }
 }
